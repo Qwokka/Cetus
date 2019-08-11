@@ -18,7 +18,7 @@ The name Cetus comes from the Latin word for "sea monster"
 
 ## Examples
 
-[video example goes here]
+https://www.youtube.com/watch?v=V8UkCsPzbhQ
 
 ## Credits
 
