@@ -162,3 +162,33 @@ const downloadText = function(filename, text) {
 
       document.body.removeChild(anchorElement);
 };
+
+
+// BigInt capable JSON handlers from
+// https://golb.hplar.ch/2018/09/javascript-bigint.html
+const bigintJsonParse = function(jsonString) {
+    return JSON.parse(jsonString, (key, value) => {
+        if (typeof value === 'string' && /^\d+n$/.test(value)) {
+            return BigInt(value.slice(0, -1));
+        }
+        return value;
+    });
+}
+
+const bigintJsonStringify = function(jsonObject) {
+    return JSON.stringify(jsonObject, (key, value) => {
+        if (typeof value === 'bigint') {
+            return value.toString() + 'n';
+        } else {
+            return value;
+        }
+    });
+}
+
+const bigintIsNaN = function(value) {
+    if (typeof value === "bigint") {
+        return false;
+    }
+
+    return isNaN(value);
+}

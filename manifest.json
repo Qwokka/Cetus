@@ -16,6 +16,7 @@
         "content/cetus.js",
         "content/init.js",
         "shared/wail.min.js/wail.min.js",
+        "shared/utils.js",
         "content/thirdparty/stacktrace/stacktrace.min.js"
     ],
 	"browser_action": {

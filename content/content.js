@@ -16,7 +16,7 @@ limitations under the License.
 
 // Listen for messages from web page and pass them along to extension
 window.addEventListener("cetusMsgIn", function(msg) {
-    chrome.runtime.sendMessage(JSON.parse(msg.detail));
+    chrome.runtime.sendMessage(msg.detail);
 }, false);
 
 // Listn for messages from extension and pass them along to web page
@@ -91,6 +91,7 @@ storageGet("savedPatches", function(result) {
         }
     }
 
+    injectScript("/shared/utils.js");
     injectScript("/shared/wail.min.js/wail.min.js");
     injectScript("/content/thirdparty/stacktrace/stacktrace.min.js");
     injectScript("/content/cetus.js");

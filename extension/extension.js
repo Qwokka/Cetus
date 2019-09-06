@@ -286,7 +286,9 @@ class PopupExtension {
     }
 }
 
-const bgMessageListener = function(msg) {
+const bgMessageListener = function(msgRaw) {
+    const msg = bigintJsonParse(msgRaw);
+
     const type = msg.type;
     const msgBody = msg.body;
 

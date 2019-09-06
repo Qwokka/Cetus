@@ -53,11 +53,11 @@ document.getElementById('searchForm').onsubmit = function(e) {
 	let lowerAddr = form.lower.value;
 	let upperAddr = form.upper.value;
 
-	if (lowerAddr == '' || isNaN(lowerAddr)) {
+	if (lowerAddr == '' || bigintIsNaN(lowerAddr)) {
 		lowerAddr = 0;
 	}
 
-	if (upperAddr == '' || isNaN(upperAddr)) {
+	if (upperAddr == '' || bigintIsNaN(upperAddr)) {
 		upperAddr = 0xffffffff;
 	}
 
@@ -66,7 +66,7 @@ document.getElementById('searchForm').onsubmit = function(e) {
 
 	extension.searchMemType = memType;
 
-	if (isNaN(param) || param == '') {
+	if (bigintIsNaN(param) || param == '') {
 		param = null;
 	}
 
@@ -486,7 +486,7 @@ const updateSearchResults = function(resultCount, resultObject, resultMemType) {
 		const value = resultObject[index];
 
 		// Validate both index and value are numeric
-		if (isNaN(index) || isNaN(value)) {
+		if (bigintIsNaN(index) || bigintIsNaN(value)) {
 			continue;
 		}
 
@@ -1040,7 +1040,7 @@ importPatchButton.addEventListener('click', importPatch);
 const updateSpeedhackGauge = function() {
     const range = document.getElementById("shRange");
 
-    if (isNaN(range.value)) {
+    if (bigintIsNaN(range.value)) {
         return;
     }
 
@@ -1100,7 +1100,7 @@ document.getElementById('toggleSpeedhack').onclick = function(e) {
     const range = document.getElementById('shRange');
     const multiplier = range.value;
 
-    if (isNaN(multiplier)) {
+    if (bigintIsNaN(multiplier)) {
         return;
     }
 
