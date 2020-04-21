@@ -571,7 +571,6 @@ const webAssemblyInstantiateStreamingHook = function(bufferSource, importObject)
             const memoryObj = instrumentResults.memory;
 
             oldWebAssemblyInstantiate(instrumentedBuffer, importObject).then(function(instanceObject) {
-                console.log(instanceObject);
                 cetus = new Cetus({
                     memory: memoryObj,
                     watchpointExports: [instanceObject.instance.exports.addWatch],
