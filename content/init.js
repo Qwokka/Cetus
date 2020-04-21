@@ -548,13 +548,20 @@ const oldWebAssemblyInstantiateStreaming = WebAssembly.instantiateStreaming;
 const webAssemblyInstantiateStreamingHook = function(bufferSource, importObject) {
     colorLog("WebAssembly.instantiateStreaming() intercepted");
 
-    let importMemory = null;
+    // TODO In the future we should retrieve the memory object by parsing the IMPORT/EXPORT
+    // sections of the binary. But for now this is pretty reliable
+    let memoryObj = null;
 
     // Emscripten by default stores most of the environment in importObject.env
     // If it doesn't exist already let's create it so we have a place to put 
     // our imported functions
     if (typeof importObject.env === "undefined") {
         importObject.env = {};
+    }
+    else {
+        if (importObject.env.memory instanceof WebAssemblyMemory) {
+            memoryObj = importObject.env.memory;
+        }
     }
 
     importObject.env.readWatchCallback = readWatchCallback;
@@ -568,9 +575,12 @@ const webAssemblyInstantiateStreamingHook = function(bufferSource, importObject)
 
             const instrumentedBuffer = instrumentResults.buffer;
             const instrumentedSymbols = instrumentResults.symbols;
-            const memoryObj = instrumentResults.memory;
 
             oldWebAssemblyInstantiate(instrumentedBuffer, importObject).then(function(instanceObject) {
+                if (memoryObj == null) {
+                    memoryObj = instanceObject.instance.exports.memory;
+                }
+
                 cetus = new Cetus({
                     memory: memoryObj,
                     watchpointExports: [instanceObject.instance.exports.addWatch],
