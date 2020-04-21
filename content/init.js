@@ -559,7 +559,7 @@ const webAssemblyInstantiateStreamingHook = function(bufferSource, importObject)
         importObject.env = {};
     }
     else {
-        if (importObject.env.memory instanceof WebAssemblyMemory) {
+        if (importObject.env.memory instanceof WebAssembly.Memory) {
             memoryObj = importObject.env.memory;
         }
     }
