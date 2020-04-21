@@ -1,5 +1,5 @@
 /**
-Copyright 2019 Jack Baker
+Copyright 2020 Jack Baker
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

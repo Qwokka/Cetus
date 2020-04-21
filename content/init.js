@@ -1,5 +1,5 @@
 /**
-Copyright 2019 Jack Baker
+Copyright 2020 Jack Baker
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -496,8 +496,10 @@ const webAssemblyModuleHook = function(bufferSource) {
 
     const instrumentedBuffer = instrumentResults.buffer;
     const instrumentedSymbols = instrumentResults.symbols;
+    const memoryObj = instrumentResults.memory;
 
     cetus = new Cetus({
+        memory: memoryObj,
         watchpointExports: [instanceObject.instance.exports.addWatch],
         buffer: instrumentedBuffer,
         symbols: instrumentedSymbols
@@ -517,14 +519,20 @@ const webAssemblyInstanceHook = function(module, importObject) {
 
     const instrumentedBuffer = instrumentResults.buffer;
     const instrumentedSymbols = instrumentResults.symbols;
+    const memoryObj = instrumentResults.memory;
 
-    const importMemory = importObject.env.memory;
+    // Emscripten by default stores most of the environment in importObject.env
+    // If it doesn't exist already let's create it so we have a place to put 
+    // our imported functions
+    if (!"env" in importObject) {
+        importObject.env = {};
+    }
 
     importObject.env.readWatchCallback = readWatchCallback;
     importObject.env.writeWatchCallback = writeWatchCallback;
 
     cetus = new Cetus({
-        memory: importMemory,
+        memory: memoryObj,
         watchpointExports: [instanceObject.instance.exports.addWatch],
         buffer: instrumentedBuffer,
         symbols: instrumentedSymbols
@@ -540,10 +548,17 @@ const oldWebAssemblyInstantiateStreaming = WebAssembly.instantiateStreaming;
 const webAssemblyInstantiateStreamingHook = function(bufferSource, importObject) {
     colorLog("WebAssembly.instantiateStreaming() intercepted");
 
+    let importMemory = null;
+
+    // Emscripten by default stores most of the environment in importObject.env
+    // If it doesn't exist already let's create it so we have a place to put 
+    // our imported functions
+    if (typeof importObject.env === "undefined") {
+        importObject.env = {};
+    }
+
     importObject.env.readWatchCallback = readWatchCallback;
     importObject.env.writeWatchCallback = writeWatchCallback;
-
-    const importMemory = importObject.env.memory;
 
     const wail = new WailParser();
 
@@ -553,10 +568,12 @@ const webAssemblyInstantiateStreamingHook = function(bufferSource, importObject)
 
             const instrumentedBuffer = instrumentResults.buffer;
             const instrumentedSymbols = instrumentResults.symbols;
+            const memoryObj = instrumentResults.memory;
 
             oldWebAssemblyInstantiate(instrumentedBuffer, importObject).then(function(instanceObject) {
+                console.log(instanceObject);
                 cetus = new Cetus({
-                    memory: importMemory,
+                    memory: memoryObj,
                     watchpointExports: [instanceObject.instance.exports.addWatch],
                     buffer: instrumentedBuffer,
                     symbols: instrumentedSymbols

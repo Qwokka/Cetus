@@ -1,5 +1,5 @@
 /**
-Copyright 2019 Jack Baker
+Copyright 2020 Jack Baker
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -342,6 +342,16 @@ const colorLog = function(msg) {
         "color: #FFFFFF; background: #000000; padding:5px 0;",
         "background: #858585; padding:5px 0;",
         "color: #FFFFFF; background: #464646; padding:5px 0;",
+        "background: #858585; padding:5px 0;",
+        "color: #ff2424; background: #fff; padding:5px 0;");
+};
+
+const colorError = function(msg) {
+    console.log("%c %c \u{1f419} CETUS %c %c " + msg + " %c %c",
+        "background: #858585; padding:5px 0;",
+        "color: #eb4034; background: #000000; padding:5px 0;",
+        "background: #858585; padding:5px 0;",
+        "color: #eb4034; background: #464646; padding:5px 0;",
         "background: #858585; padding:5px 0;",
         "color: #ff2424; background: #fff; padding:5px 0;");
 };
