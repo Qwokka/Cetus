@@ -299,6 +299,92 @@ class Cetus {
 
         memory[memIndex] = memValue;
     }
+
+    // TODO Implement this in the UI
+    strings(minLength = 4) {
+        let ascii =  this.asciiStrings(minLength);
+        let unicode = this.unicodeStrings(minLength);
+
+        return ascii.concat(unicode);
+    }
+
+    // TODO Implement this in the UI
+    asciiStrings(minLength = 4) {
+        if (minLength < 1) {
+            console.error("Minimum length must be at least 1!");
+            return;
+        }
+        else if (minLength < 4) {
+            console.warn("Using minimum length " + minLength + ". This will probably return a lot of results!");
+        }
+
+        const results = [];
+
+        const memory = this.memory("i8");
+
+        let current = [];
+    
+        for (let i = 0; i < memory.length; i++) {
+            const thisByte = memory[i];
+
+            if (thisByte >= 0x20 && thisByte < 0x7f) {
+                current.push(thisByte);
+                continue;
+            }
+
+            if (current.length >= minLength) {
+                let thisString = "";
+
+                for (let j = 0; j < current.length; j++) {
+                    thisString += String.fromCharCode(current[j]);
+                }
+
+                results.push(thisString);
+                current = [];
+            }
+        }
+
+        return results;
+    }
+
+    // TODO Implement this in the UI
+    unicodeStrings(minLength = 4) {
+        if (minLength < 1) {
+            console.error("Minimum length must be at least 1!");
+            return;
+        }
+        else if (minLength < 4) {
+            console.warn("Using minimum length " + minLength + ". This will probably return a lot of results!");
+        }
+
+        const results = [];
+
+        const memory = this.memory("i16");
+
+        let current = [];
+    
+        for (let i = 0; i < memory.length; i++) {
+            const thisByte = memory[i];
+
+            if (thisByte) {
+                current.push(thisByte);
+                continue;
+            }
+
+            if (current.length >= minLength) {
+                let thisString = "";
+
+                for (let j = 0; j < current.length; j++) {
+                    thisString += String.fromCharCode(current[j]);
+                }
+
+                results.push(thisString);
+                current = [];
+            }
+        }
+
+        return results;
+    }
 }
 
 // TODO Move speedhack stuff
