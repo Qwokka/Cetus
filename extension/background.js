@@ -125,6 +125,7 @@ class BackgroundExtension {
             url: null,
             bookmarks: {},
             symbols: {},
+            stackTraces: [],
             searchForm: {
                 value: "",
                 comparison: "eq",
@@ -287,6 +288,10 @@ class BackgroundExtension {
     }
 
     addStackTrace(newTrace) {
+        // This hopefully shouldn't happen anymore but let's be sure
+        if (typeof this.popupData.stackTraces === "undefined") {
+            this.popupData.stackTraces = [];
+        }
         this.popupData.stackTraces.push(newTrace);
     }
 }
