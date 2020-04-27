@@ -1,3 +1,3 @@
 [submodule "shared/wail.min.js"]
 	path = shared/wail.min.js
-	url = git@github.com:Qwokka/wail.min.js.git
+	url = https://github.com/Qwokka/wail.min.js
