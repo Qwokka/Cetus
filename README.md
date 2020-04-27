@@ -26,6 +26,10 @@ The name Cetus comes from the Latin word for "sea monster"
 
 Official packages are coming post-Defcon (Assuming Google/Mozilla allow them). For now Cetus can be installed as a developer extension.
 
+Download the latest release or:
+
+`git clone --recursive https://github.com/Qwokka/Cetus`
+
 ### Chrome
 
 - Download [the latest release](https://github.com/Qwokka/Cetus/releases)
