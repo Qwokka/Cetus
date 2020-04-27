@@ -379,13 +379,14 @@ const instrumentBinary = function(bufferSource) {
     const readWpIndex =  wail.getFunctionIndex(funcEntryReadWatchpoint);
     const configWpIndex = wail.getFunctionIndex(funcEntryConfigureWatchpoint);
 
-    symObj[writeWpIndex] = "_wp_write";
-    symObj[readWpIndex] = "_wp_read";
-    symObj[configWpIndex] = "_wp_config";
-
     const resultObj = {};
 
     resultObj.buffer = wail.write();
+
+    symObj[writeWpIndex.i32()] = "_wp_write";
+    symObj[readWpIndex.i32()] = "_wp_read";
+    symObj[configWpIndex.i32()] = "_wp_config";
+
     resultObj.symbols = symObj;
 
     return resultObj;
