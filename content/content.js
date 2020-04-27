@@ -71,7 +71,7 @@ storageGet("savedPatches", function(result) {
                 const thisPatch = savedPatches[i];
 
                 // TODO Improve this matching in the future
-                if (thisPatch.url == window.location.href && thisPatch.enabled) {
+                if (thisPatch.url == (window.location.host + window.location.pathname) && thisPatch.enabled) {
                     const patchParams = {
                         index: thisPatch.index,
                         bytes: thisPatch.bytes

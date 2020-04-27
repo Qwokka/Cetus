@@ -38,7 +38,7 @@ class Cetus {
 
         // Inform the extension that we have initialized
         sendExtensionMessage("init", {
-            url: window.location.href,
+            url: (window.location.host + window.location.pathname),
             symbols: this._symbols
         });
     }
