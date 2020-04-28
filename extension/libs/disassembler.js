@@ -30,7 +30,7 @@ const InstructionReader = class extends BufferReader {
             const thisName = nameArray[i];
 
             if (typeof thisName !== "string") {
-                throw new Error("Invalid keyword name in Disassembler.readKeywords()");
+                throw new Error("Invalid keyword name in InstructionReader.readKeywords()");
             }
 
             const thisValue = this.readVarUint32();
@@ -60,7 +60,7 @@ const InstructionReader = class extends BufferReader {
             case VALUE_TYPE_BLOCK:
                 return "";
             default:
-                throw new Error("Bad block type in Disassembler.readBlockType()");
+                throw new Error("Bad block type in InstructionReader.readBlockType()");
         }
     }
 };
