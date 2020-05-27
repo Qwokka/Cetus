@@ -18,7 +18,9 @@ The name Cetus comes from the Latin word for "sea monster"
 
 ## Examples
 
-[Check out the wiki!](https://github.com/Qwokka/Cetus/wiki)
+[Read the Tutorial](https://github.com/Qwokka/Cetus/wiki/Cetus-101---Invincibility)
+
+[Check out some CTF Writeups](https://github.com/Qwokka/Cetus/wiki/CTF-Writeups)
 
 [Or watch this video](https://www.youtube.com/watch?v=V8UkCsPzbhQ)
 
