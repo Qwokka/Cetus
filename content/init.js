@@ -266,6 +266,28 @@ const instrumentBinary = function(bufferSource) {
             case OP_F64_LOAD:
                 pushSizeImmediate = VarUint32(8);
                 break;
+            case OP_ATOMIC:
+                const arg = instrBytes[1];
+                switch(arg) {
+                    case ARG_I32_ATOMIC_LOAD:
+                    case ARG_I64_ATOMIC_LOAD_32U:
+                        pushSizeImmediate = VarUint32(4);
+                        break;
+                    case ARG_I64_ATOMIC_LOAD:
+                        pushSizeImmediate = VarUint32(8);
+                        break;
+                    case ARG_I32_ATOMIC_LOAD_8U:
+                    case ARG_I64_ATOMIC_LOAD_8U:
+                        pushSizeImmediate = VarUint32(1);
+                        break;
+                    case ARG_I32_ATOMIC_LOAD_16U:
+                    case ARG_I64_ATOMIC_LOAD_16U:
+                        pushSizeImmediate = VarUint32(2);
+                        break;
+                    default:
+                        throw new Error("Bad atomic argument in readWatchpointInstrCallback()");
+                }
+                break;
             default:
                 throw new Error("Bad opcode in readWatchpointInstrCallback()");
         }
@@ -329,6 +351,24 @@ const instrumentBinary = function(bufferSource) {
         return reader.write();
     };
 
+    // All atomic instructions start with the same opcode (0xFE) so they need
+    // their own parser
+    // This parser just ensures that the instruction is actually an atomic load/store
+    // then routes the instruction to the proper callback
+    const atomicInstrCallback = function(instrBytes) {
+        const arg = instrBytes[1];
+
+        if (arg >= ARG_I32_ATOMIC_LOAD && arg <= ARG_I64_ATOMIC_LOAD_32U) {
+            return readWatchpointInstrCallback(instrBytes);
+        }
+        else if (arg >= ARG_I32_ATOMIC_STORE && arg <= ARG_I64_ATOMIC_RMW_CMPXCHG_32U) {
+            return writeWatchpointInstrCallback(instrBytes);
+
+        }
+
+        return instrBytes;
+    };
+
     wail.addInstructionParser(OP_I32_LOAD,     readWatchpointInstrCallback);
     wail.addInstructionParser(OP_I64_LOAD,     readWatchpointInstrCallback);
     wail.addInstructionParser(OP_F32_LOAD,     readWatchpointInstrCallback);
@@ -353,6 +393,8 @@ const instrumentBinary = function(bufferSource) {
     wail.addInstructionParser(OP_I64_STORE8,  writeWatchpointInstrCallback);
     wail.addInstructionParser(OP_I64_STORE16, writeWatchpointInstrCallback);
     wail.addInstructionParser(OP_I64_STORE32, writeWatchpointInstrCallback);
+
+    wail.addInstructionParser(OP_ATOMIC, atomicInstrCallback);
 
     // patchOptions will be set early on in page load if there are any configured patches
     // for this binary
@@ -546,7 +588,7 @@ window.WebAssembly.Instance = webAssemblyInstanceHook;
 
 const oldWebAssemblyInstantiateStreaming = WebAssembly.instantiateStreaming;
 
-const webAssemblyInstantiateStreamingHook = function(bufferSource, importObject) {
+const webAssemblyInstantiateStreamingHook = function(sourceObj, importObject) {
     colorLog("WebAssembly.instantiateStreaming() intercepted");
 
     // TODO In the future we should retrieve the memory object by parsing the IMPORT/EXPORT
@@ -571,7 +613,7 @@ const webAssemblyInstantiateStreamingHook = function(bufferSource, importObject)
     const wail = new WailParser();
 
     return new Promise(function(resolve, reject) {
-        bufferSource.then((res) => res.arrayBuffer()).then((bufferSource) => {
+        const handleBuffer = function(bufferSource) {
             const instrumentResults = instrumentBinary(bufferSource);
 
             const instrumentedBuffer = instrumentResults.buffer;
@@ -591,7 +633,21 @@ const webAssemblyInstantiateStreamingHook = function(bufferSource, importObject)
 
                 resolve(instanceObject);
             });
-        });
+        }
+
+        if (sourceObj instanceof Promise) {
+            sourceObj.then((res) => res.arrayBuffer()).then((bufferSource) => {
+                handleBuffer(bufferSource);
+            });
+        }
+        else if (sourceObj instanceof Response) {
+            sourceObj.arrayBuffer().then((bufferSource) => {
+                handleBuffer(bufferSource);
+            });
+        }
+        else {
+            colorError("Got unexpected object type as first argument to WebAssembly.instantiateStreaming");
+        }
     });
 };
 
