@@ -570,9 +570,9 @@ const updateBookmarkTable = function(bookmarks) {
 		const value = bookmark.value;
 		const memType = bookmark.memType;
 
-		const frozen = bookmark.flags & FLAG_FREEZE;
-		const readWatch = bookmark.flags & FLAG_WATCH_READ;
-		const writeWatch = bookmark.flags & FLAG_WATCH_WRITE;
+		const frozen = bookmark.flags & FLAG_FREEZE != 0;
+		const readWatch = bookmark.flags & FLAG_WATCH_READ != 0;
+		const writeWatch = bookmark.flags & FLAG_WATCH_WRITE != 0;
 
 		row = tbody.insertRow();
 
