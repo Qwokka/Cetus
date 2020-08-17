@@ -47,6 +47,11 @@ document.getElementById('searchForm').onsubmit = function(e) {
 
 	const compare = radio.value;
 	const memType = form.type.value;
+	// Selector for the string/numeric search
+	const numStr = form.numStrSelection.value;
+
+	// FIXME 
+	// alert(numStr);
 
 	let param = form.param.value;
 
@@ -72,6 +77,7 @@ document.getElementById('searchForm').onsubmit = function(e) {
 
 	// TODO Make consistent with background.js
 	extension.sendBGMessage('search', {
+		numStr: numStr,
 		memType: memType,
 		compare: compare,
 		param: param,
