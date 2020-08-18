@@ -347,11 +347,13 @@ class Cetus {
             console.warn("Using minimum length " + minLength + ". This will probably return a lot of results!");
         }
 
+        const searchResults = {};
         const results = [];
 
         const memory = this.memory("i8");
 
         let current = [];
+        let count = 0;
 
         if (this.debugLevel >= 1) {
             colorLog("asciiStrings: entering ASCII string search");
@@ -372,12 +374,20 @@ class Cetus {
                     thisString += String.fromCharCode(current[j]);
                 }
 
-                results.push(thisString);
+                // FIXME
+                // results.push(thisString);
+                // alert("Index "  + i);
+                // alert("Len " + current.length);
+
+                results[i - current.length] = thisString;
+                count++;
                 current = [];
 
                 if (this.debugLevel >= 2) {
                     colorLog("asciiStrings: string found: " + thisString);
                 }
+            } else {
+                current = [];
             }
         }
 
@@ -385,7 +395,11 @@ class Cetus {
             colorLog("asciiStrings: exiting ASCII string search");
         }
 
-        return results;
+        searchResults.count = count;
+        searchResults.results = results;
+
+        return searchResults;
+        // FIXME return results;
     }
 
     // TODO Implement this in the UI
@@ -538,7 +552,7 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
             break;
         case "search":
             const searchNumStr      = msgBody.numStr;
-            const searchMemType     = msgBody.memType;
+            let   searchMemType     = msgBody.memType;
             const searchComparison  = msgBody.compare;
             const searchLower       = msgBody.lower;
             const searchUpper       = msgBody.upper;
@@ -567,9 +581,12 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
                     colorLog("addEventListener: starting string search with value " + searchParam);
                 }
 
-                searchReturn = cetus.asciiStrings(5);
+                // searchReturn = cetus.strings(5);
+                searchReturn = cetus.asciiStrings(searchParam);
                 searchResultsCount = searchReturn.count;
                 searchResults = searchReturn.results;
+                // Force memType
+                searchMemType = "i8";
             }
 
             let subset = {};

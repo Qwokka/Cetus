@@ -491,8 +491,8 @@ const updateSearchResults = function(resultCount, resultObject, resultMemType) {
 	for (const index of Object.keys(resultObject)) {
 		const value = resultObject[index];
 
-		// Validate both index and value are numeric
-		if (bigintIsNaN(index) || bigintIsNaN(value)) {
+		// Validate both index and value 
+		if (index == null || value == null) {
 			continue;
 		}
 
@@ -504,7 +504,11 @@ const updateSearchResults = function(resultCount, resultObject, resultMemType) {
 		cell.innerText = toHex(realAddress);
 
 		cell = row.insertCell();
-		cell.innerText = formatValue(value, resultMemType);
+		if (bigintIsNaN(value)) {
+			cell.innerText = value;
+		} else {	
+			cell.innerText = formatValue(value, resultMemType);
+        }
 
 		cell = row.insertCell();
 		const saveButton = createSaveButton(realAddress);
@@ -576,9 +580,9 @@ const updateBookmarkTable = function(bookmarks) {
 		const value = bookmark.value;
 		const memType = bookmark.memType;
 
-		const frozen = bookmark.flags & FLAG_FREEZE != 0;
-		const readWatch = bookmark.flags & FLAG_WATCH_READ != 0;
-		const writeWatch = bookmark.flags & FLAG_WATCH_WRITE != 0;
+		const frozen = (bookmark.flags & FLAG_FREEZE) != 0;
+		const readWatch = (bookmark.flags & FLAG_WATCH_READ) != 0;
+		const writeWatch = (bookmark.flags & FLAG_WATCH_WRITE) != 0;
 
 		row = tbody.insertRow();
 
