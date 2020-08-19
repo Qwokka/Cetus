@@ -104,15 +104,23 @@ document.getElementById('numStrSelector').onclick = function(e) {
 
 	switch(numStr) {
 		case "bytes":
+			form.type.value = "i8";
+			placeHolder = form.searchParam.placeholder = "Hex bytes, space separated (09 ab fe ...)";
+			updateSearchForm(form);
+			break;
 		case "strA":
 			form.type.value = "i8";
+			placeHolder = form.searchParam.placeholder = "Minimum String Length";
 			updateSearchForm(form);
 			break;
 		case "strU":
 			form.type.value = "i16";
+			placeHolder = form.searchParam.placeholder = "Minimum String Length";
 			updateSearchForm(form);
 			break;
 		default:
+		    placeHolder = form.searchParam.placeholder = "Enter value";
+			updateSearchForm(form);
 			break;
 	}
 };
