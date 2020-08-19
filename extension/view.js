@@ -102,9 +102,18 @@ document.getElementById('numStrSelector').onclick = function(e) {
 	const form = document.getElementById('searchForm');
 	const numStr = form.numStrSelection.value;
 
-	if (numStr.localeCompare("str") == 0) {
-		form.type.value = "i8";
-		updateSearchForm(form);
+	switch(numStr) {
+		case "bytes":
+		case "strA":
+			form.type.value = "i8";
+			updateSearchForm(form);
+			break;
+		case "strU":
+			form.type.value = "i16";
+			updateSearchForm(form);
+			break;
+		default:
+			break;
 	}
 };
 

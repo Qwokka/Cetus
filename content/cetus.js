@@ -413,6 +413,10 @@ class Cetus {
 
         let current = [];
         let count = 0;
+
+        if (this.debugLevel >= 1) {
+            colorLog("unicodeStrings: entering UNICODE string search");
+        }
     
         for (let i = 0; i < memory.length; i++) {
             const thisByte = memory[i];
@@ -432,11 +436,20 @@ class Cetus {
                 if (thisString.length >= minLength) {
                     results[i - current.length] = thisString;
                     count++;
+
+                    if (this.debugLevel >= 2) {
+                        colorLog("unicodeStrings: string found: " + thisString);
+                    }
+
                 }    
                 current = [];
             } else {
                 current = [];
             }
+        }
+
+        if (this.debugLevel >= 1) {
+            colorLog("unicodeStrings: exiting UNICODE string search");
         }
 
         searchResults.count = count;
@@ -566,30 +579,52 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
             let searchResults;
             let searchResultsCount;
 
-            if (searchNumStr.localeCompare("num") == 0) {
-                // Numeric search
-                if (this.debugLevel >= 1) {
-                    colorLog("addEventListener: starting numeric search with value " + searchParam);
-                }
-                searchReturn = cetus.search(searchComparison,
-                                             searchMemType,
-                                             searchParam,
-                                             searchLower,
-                                             searchUpper);
-    
-                searchResultsCount = searchReturn.count;
-                searchResults = searchReturn.results;
-            } else {
-                // String search
-                 if (this.debugLevel >= 1) {
-                    colorLog("addEventListener: starting string search with value " + searchParam);
-                }
+            switch(searchNumStr) {
+                case "num":
+                    // Numeric search
+                    if (this.debugLevel >= 1) {
+                        colorLog("addEventListener: starting numeric search with value " + searchParam);
+                    }
+                    searchReturn = cetus.search(searchComparison,
+                                                 searchMemType,
+                                                 searchParam,
+                                                 searchLower,
+                                                 searchUpper);
+        
+                    searchResultsCount = searchReturn.count;
+                    searchResults = searchReturn.results;
+                    break;
+                case "strA":
+                    // ASCII String search
+                     if (this.debugLevel >= 1) {
+                        colorLog("addEventListener: starting ASCII string search with value " + searchParam);
+                    }
 
-                // FIXME
-                searchReturn = cetus.asciiStrings(searchParam);
-                // searchReturn = cetus.unicodeStrings(searchParam);
-                searchResultsCount = searchReturn.count;
-                searchResults = searchReturn.results;
+                    searchReturn = cetus.asciiStrings(searchParam);
+                    searchResultsCount = searchReturn.count;
+                    searchResults = searchReturn.results;
+                    break;
+                case "strU":
+                    // UNICODE String search
+                     if (this.debugLevel >= 1) {
+                        colorLog("addEventListener: starting UNICODE string search with value " + searchParam);
+                    }
+
+                    searchReturn = cetus.unicodeStrings(searchParam);
+                    searchResultsCount = searchReturn.count;
+                    searchResults = searchReturn.results;
+                    break;
+                case "bytes":
+                    // Bytes sequence search
+                     if (this.debugLevel >= 1) {
+                        colorLog("addEventListener: **TBD** starting Bytes sequence search with value " + searchParam);
+                    }
+
+                    // searchResultsCount = searchReturn.count;
+                    // searchResults = searchReturn.results;
+                    break;
+                default:
+                    break;
             }
 
             let subset = {};
