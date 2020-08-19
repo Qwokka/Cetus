@@ -95,6 +95,19 @@ document.getElementById('searchForm').onsubmit = function(e) {
 	}
 };
 
+document.getElementById('numStrSelector').onclick = function(e) {
+	
+	// If the "string" search has been selected, force the type to "i8" 
+
+	const form = document.getElementById('searchForm');
+	const numStr = form.numStrSelection.value;
+
+	if (numStr.localeCompare("str") == 0) {
+		form.type.value = "i8";
+		updateSearchForm(form);
+	}
+};
+
 document.getElementById('functionFormSearch').onsubmit = function(e) {
 	e.preventDefault();
 

@@ -374,11 +374,6 @@ class Cetus {
                     thisString += String.fromCharCode(current[j]);
                 }
 
-                // FIXME
-                // results.push(thisString);
-                // alert("Index "  + i);
-                // alert("Len " + current.length);
-
                 results[i - current.length] = thisString;
                 count++;
                 current = [];
@@ -399,7 +394,6 @@ class Cetus {
         searchResults.results = results;
 
         return searchResults;
-        // FIXME return results;
     }
 
     // TODO Implement this in the UI
@@ -412,11 +406,13 @@ class Cetus {
             console.warn("Using minimum length " + minLength + ". This will probably return a lot of results!");
         }
 
+        const searchResults = {};
         const results = [];
 
         const memory = this.memory("i16");
 
         let current = [];
+        let count = 0;
     
         for (let i = 0; i < memory.length; i++) {
             const thisByte = memory[i];
@@ -433,12 +429,20 @@ class Cetus {
                     thisString += String.fromCharCode(current[j]);
                 }
 
-                results.push(thisString);
+                if (thisString.length >= minLength) {
+                    results[i - current.length] = thisString;
+                    count++;
+                }    
+                current = [];
+            } else {
                 current = [];
             }
         }
 
-        return results;
+        searchResults.count = count;
+        searchResults.results = results;
+
+        return searchResults;
     }
 }
 
@@ -581,12 +585,11 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
                     colorLog("addEventListener: starting string search with value " + searchParam);
                 }
 
-                // searchReturn = cetus.strings(5);
+                // FIXME
                 searchReturn = cetus.asciiStrings(searchParam);
+                // searchReturn = cetus.unicodeStrings(searchParam);
                 searchResultsCount = searchReturn.count;
                 searchResults = searchReturn.results;
-                // Force memType
-                searchMemType = "i8";
             }
 
             let subset = {};
