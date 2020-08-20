@@ -330,6 +330,7 @@ class Cetus {
     }
 
     // TODO Implement this in the UI
+    // FIXME: needed?
     strings(minLength = 4) {
         let ascii =  this.asciiStrings(minLength);
         let unicode = this.unicodeStrings(minLength);
@@ -337,7 +338,6 @@ class Cetus {
         return ascii.concat(unicode);
     }
 
-    // TODO Implement this in the UI
     asciiStrings(minLength = 4) {
         if (minLength < 1) {
             console.error("Minimum length must be at least 1!");
@@ -396,7 +396,6 @@ class Cetus {
         return searchResults;
     }
 
-    // TODO Implement this in the UI
     unicodeStrings(minLength = 4) {
         if (minLength < 1) {
             console.error("Minimum length must be at least 1!");
@@ -450,6 +449,65 @@ class Cetus {
 
         if (this.debugLevel >= 1) {
             colorLog("unicodeStrings: exiting UNICODE string search");
+        }
+
+        searchResults.count = count;
+        searchResults.results = results;
+
+        return searchResults;
+    }
+
+    bytesSequence(bytesSeq) {
+        if (bytesSeq.length < 1) {
+            console.error("Minimum length must be at least 1!");
+            return;
+        }
+        else if (bytesSeq.length < 4) {
+            console.warn("Sequence length is small: " + bytesSeq.length + ". This will probably return a lot of results!");
+        }
+
+        const searchResults = {};
+        const results = [];
+
+        const memory = this.memory("i8");
+
+        let count = 0;
+        let match = 0;
+
+        if (this.debugLevel >= 1) {
+            colorLog("bytesSequence: entering bytes sequence search");
+        }
+
+        // Load an array with the bytes sequence (hex) before starting, 
+        // skipping first element (empty)
+        const bytes = bytesSeq.trim().split(/\\\\x/);
+        bytes.shift();
+
+        for (let i = 0; i < memory.length; i++) {
+            const thisByte = memory[i];
+
+            // TODO: Optimize this one, avoid conversion every time
+            if ( thisByte == parseInt(bytes[match],16)) {  
+                match++;     
+                continue;       
+            }
+            
+            if (match == bytes.length) {
+
+                results[i - bytes.length] = bytesSeq;
+                count++;
+                match = 0;
+
+                if (this.debugLevel >= 2) {
+                    colorLog("bytesSequence: sequence found: " + bytesSeq);
+                }
+            } else {
+                match = 0;
+            }
+        }
+
+        if (this.debugLevel >= 1) {
+            colorLog("bytesSequence: exiting bytes sequence search");
         }
 
         searchResults.count = count;
@@ -617,11 +675,12 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
                 case "bytes":
                     // Bytes sequence search
                      if (this.debugLevel >= 1) {
-                        colorLog("addEventListener: **TBD** starting Bytes sequence search with value " + searchParam);
+                        colorLog("addEventListener: starting Bytes sequence search with value " + searchParam);
                     }
 
-                    // searchResultsCount = searchReturn.count;
-                    // searchResults = searchReturn.results;
+                    searchReturn = cetus.bytesSequence(searchParam);
+                    searchResultsCount = searchReturn.count;
+                    searchResults = searchReturn.results;
                     break;
                 default:
                     break;

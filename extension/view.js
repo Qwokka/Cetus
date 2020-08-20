@@ -50,9 +50,6 @@ document.getElementById('searchForm').onsubmit = function(e) {
 	// Selector for the string/numeric search
 	const numStr = form.numStrSelection.value;
 
-	// FIXME 
-	// alert(numStr);
-
 	let param = form.param.value;
 
 	let lowerAddr = form.lower.value;
@@ -71,9 +68,19 @@ document.getElementById('searchForm').onsubmit = function(e) {
 
 	extension.searchMemType = memType;
 
-	if (bigintIsNaN(param) || param == '') {
+	if (numStr != "bytes" && (bigintIsNaN(param) || param == '')) {
 		param = null;
-	}
+	} else if (numStr.localeCompare("bytes") == 0) {
+  		// Validate "bytes" input
+  		const split1 = [...param.trim().matchAll(/\\\\x[0-9a-f]{2}(?![0-9a-z])/gi)];
+  		const split2 = param.trim().split(/\\\\x/);
+
+  		if ((split1.length != (split2.length - 1)) || split1.length == 0) {
+  			// Something is wrong in the byte sequence
+  			console.error("Wrong byte sequence format");
+  			return;
+		}
+    }
 
 	// TODO Make consistent with background.js
 	extension.sendBGMessage('search', {
@@ -105,17 +112,17 @@ document.getElementById('numStrSelector').onclick = function(e) {
 	switch(numStr) {
 		case "bytes":
 			form.type.value = "i8";
-			placeHolder = form.searchParam.placeholder = "Hex bytes, space separated (09 ab fe ...)";
+			placeHolder = form.searchParam.placeholder = "Enter Hex bytes (ex. \\\\xde\\\\xad\\\\xbe\\\\xef)";
 			updateSearchForm(form);
 			break;
 		case "strA":
 			form.type.value = "i8";
-			placeHolder = form.searchParam.placeholder = "Minimum String Length";
+			placeHolder = form.searchParam.placeholder = "Enter Minimum String Length";
 			updateSearchForm(form);
 			break;
 		case "strU":
 			form.type.value = "i16";
-			placeHolder = form.searchParam.placeholder = "Minimum String Length";
+			placeHolder = form.searchParam.placeholder = "Enter Minimum String Length";
 			updateSearchForm(form);
 			break;
 		default:
