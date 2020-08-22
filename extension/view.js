@@ -47,6 +47,8 @@ document.getElementById('searchForm').onsubmit = function(e) {
 
 	const compare = radio.value;
 	const memType = form.type.value;
+	// Selector for the string/numeric search
+	const numStr = form.numStrSelection.value;
 
 	let param = form.param.value;
 
@@ -66,12 +68,23 @@ document.getElementById('searchForm').onsubmit = function(e) {
 
 	extension.searchMemType = memType;
 
-	if (bigintIsNaN(param) || param == '') {
+	if (numStr != "bytes" && (bigintIsNaN(param) || param == '')) {
 		param = null;
-	}
+	} else if (numStr.localeCompare("bytes") == 0) {
+  		// Validate "bytes" input
+  		const split1 = [...param.trim().matchAll(/\\\\x[0-9a-f]{2}(?![0-9a-z])/gi)];
+  		const split2 = param.trim().split(/\\\\x/);
+
+  		if ((split1.length != (split2.length - 1)) || split1.length == 0) {
+  			// Something is wrong in the byte sequence
+  			console.error("Wrong byte sequence format");
+  			return;
+		}
+    }
 
 	// TODO Make consistent with background.js
 	extension.sendBGMessage('search', {
+		numStr: numStr,
 		memType: memType,
 		compare: compare,
 		param: param,
@@ -86,6 +99,36 @@ document.getElementById('searchForm').onsubmit = function(e) {
 
 	for (let i = 0; i < typeRadioButtons.length; i++) {
 		typeRadioButtons[i].disabled = true;
+	}
+};
+
+document.getElementById('numStrSelector').onclick = function(e) {
+	
+	// If the "string" search has been selected, force the type to "i8" 
+
+	const form = document.getElementById('searchForm');
+	const numStr = form.numStrSelection.value;
+
+	switch(numStr) {
+		case "bytes":
+			form.type.value = "i8";
+			placeHolder = form.searchParam.placeholder = "Enter Hex bytes (ex. \\\\xde\\\\xad\\\\xbe\\\\xef)";
+			updateSearchForm(form);
+			break;
+		case "strA":
+			form.type.value = "i8";
+			placeHolder = form.searchParam.placeholder = "Enter Minimum String Length";
+			updateSearchForm(form);
+			break;
+		case "strU":
+			form.type.value = "i16";
+			placeHolder = form.searchParam.placeholder = "Enter Minimum String Length";
+			updateSearchForm(form);
+			break;
+		default:
+		    placeHolder = form.searchParam.placeholder = "Enter value";
+			updateSearchForm(form);
+			break;
 	}
 };
 
@@ -485,8 +528,8 @@ const updateSearchResults = function(resultCount, resultObject, resultMemType) {
 	for (const index of Object.keys(resultObject)) {
 		const value = resultObject[index];
 
-		// Validate both index and value are numeric
-		if (bigintIsNaN(index) || bigintIsNaN(value)) {
+		// Validate both index and value 
+		if (index == null || value == null) {
 			continue;
 		}
 
@@ -498,7 +541,11 @@ const updateSearchResults = function(resultCount, resultObject, resultMemType) {
 		cell.innerText = toHex(realAddress);
 
 		cell = row.insertCell();
-		cell.innerText = formatValue(value, resultMemType);
+		if (bigintIsNaN(value)) {
+			cell.innerText = value;
+		} else {	
+			cell.innerText = formatValue(value, resultMemType);
+        }
 
 		cell = row.insertCell();
 		const saveButton = createSaveButton(realAddress);
@@ -570,9 +617,9 @@ const updateBookmarkTable = function(bookmarks) {
 		const value = bookmark.value;
 		const memType = bookmark.memType;
 
-		const frozen = bookmark.flags & FLAG_FREEZE != 0;
-		const readWatch = bookmark.flags & FLAG_WATCH_READ != 0;
-		const writeWatch = bookmark.flags & FLAG_WATCH_WRITE != 0;
+		const frozen = (bookmark.flags & FLAG_FREEZE) != 0;
+		const readWatch = (bookmark.flags & FLAG_WATCH_READ) != 0;
+		const writeWatch = (bookmark.flags & FLAG_WATCH_WRITE) != 0;
 
 		row = tbody.insertRow();
 

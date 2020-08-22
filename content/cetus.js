@@ -36,6 +36,12 @@ class Cetus {
 
         this.speedhack = new SpeedHack(1);
 
+        this.debugLevel = 0;
+
+        if (this.debugLevel >= 1) {
+            colorLog("constructor: Cetus initialized");
+        }
+
         // Inform the extension that we have initialized
         sendExtensionMessage("init", {
             url: (window.location.host + window.location.pathname),
@@ -81,6 +87,10 @@ class Cetus {
         this._searchSubset = {};
         this._savedMemory = null;
         this._savedLowerBound = 0;
+
+        if (this.debugLevel >= 1) {
+            colorLog("restartSearch: Search restarted");
+        }
     }
 
     _compare(comparator, memType, lowerBound, upperBound) {
@@ -89,6 +99,10 @@ class Cetus {
         const searchKeys = Object.keys(this._searchSubset);
 
         if (searchKeys.length == 0) {
+            if (this.debugLevel >= 1) {
+                colorLog("_compare: entering raw search");
+            }
+
             for (let i = lowerBound; i <= upperBound; i++) {
                 const currentValue = memory[i];
 
@@ -98,9 +112,16 @@ class Cetus {
             }
         }
         else {
+            if (this.debugLevel >= 1) {
+                colorLog("_compare: entering subset search");
+            }
+
             for (let entry in this._searchSubset) {
                 const currentValue = memory[entry];
-
+                if (this.debugLevel >= 3) {
+                    colorLog("_compare: Looping subset search. Entry: " + entry + "  Value: " + currentValue);
+                }                
+                
                 if (entry < lowerBound || entry > upperBound || comparator(currentValue) == false) {
                     delete this._searchSubset[entry];
                 }
@@ -157,6 +178,10 @@ class Cetus {
         }
 
         let comparator;
+
+        if (this.debugLevel >= 1) {
+            colorLog("search: entering Numeric search");
+        }
 
         switch (searchComparison) {
             case "eq":
@@ -225,6 +250,10 @@ class Cetus {
 
             searchResults.count = Object.keys(searchReturn).length;
             searchResults.results = searchReturn;
+        }
+
+        if (this.debugLevel >= 1) {
+            colorLog("search: exiting Numeric search");
         }
 
         return searchResults;
@@ -301,6 +330,7 @@ class Cetus {
     }
 
     // TODO Implement this in the UI
+    // FIXME: needed?
     strings(minLength = 4) {
         let ascii =  this.asciiStrings(minLength);
         let unicode = this.unicodeStrings(minLength);
@@ -308,7 +338,6 @@ class Cetus {
         return ascii.concat(unicode);
     }
 
-    // TODO Implement this in the UI
     asciiStrings(minLength = 4) {
         if (minLength < 1) {
             console.error("Minimum length must be at least 1!");
@@ -318,12 +347,18 @@ class Cetus {
             console.warn("Using minimum length " + minLength + ". This will probably return a lot of results!");
         }
 
+        const searchResults = {};
         const results = [];
 
         const memory = this.memory("i8");
 
         let current = [];
-    
+        let count = 0;
+
+        if (this.debugLevel >= 1) {
+            colorLog("asciiStrings: entering ASCII string search");
+        }
+   
         for (let i = 0; i < memory.length; i++) {
             const thisByte = memory[i];
 
@@ -339,15 +374,28 @@ class Cetus {
                     thisString += String.fromCharCode(current[j]);
                 }
 
-                results.push(thisString);
+                results[i - current.length] = thisString;
+                count++;
+                current = [];
+
+                if (this.debugLevel >= 2) {
+                    colorLog("asciiStrings: string found: " + thisString);
+                }
+            } else {
                 current = [];
             }
         }
 
-        return results;
+        if (this.debugLevel >= 1) {
+            colorLog("asciiStrings: exiting ASCII string search");
+        }
+
+        searchResults.count = count;
+        searchResults.results = results;
+
+        return searchResults;
     }
 
-    // TODO Implement this in the UI
     unicodeStrings(minLength = 4) {
         if (minLength < 1) {
             console.error("Minimum length must be at least 1!");
@@ -357,11 +405,17 @@ class Cetus {
             console.warn("Using minimum length " + minLength + ". This will probably return a lot of results!");
         }
 
+        const searchResults = {};
         const results = [];
 
         const memory = this.memory("i16");
 
         let current = [];
+        let count = 0;
+
+        if (this.debugLevel >= 1) {
+            colorLog("unicodeStrings: entering UNICODE string search");
+        }
     
         for (let i = 0; i < memory.length; i++) {
             const thisByte = memory[i];
@@ -378,12 +432,88 @@ class Cetus {
                     thisString += String.fromCharCode(current[j]);
                 }
 
-                results.push(thisString);
+                if (thisString.length >= minLength) {
+                    results[i - current.length] = thisString;
+                    count++;
+
+                    if (this.debugLevel >= 2) {
+                        colorLog("unicodeStrings: string found: " + thisString);
+                    }
+
+                }    
+                current = [];
+            } else {
                 current = [];
             }
         }
 
-        return results;
+        if (this.debugLevel >= 1) {
+            colorLog("unicodeStrings: exiting UNICODE string search");
+        }
+
+        searchResults.count = count;
+        searchResults.results = results;
+
+        return searchResults;
+    }
+
+    bytesSequence(bytesSeq) {
+        if (bytesSeq.length < 1) {
+            console.error("Minimum length must be at least 1!");
+            return;
+        }
+        else if (bytesSeq.length < 4) {
+            console.warn("Sequence length is small: " + bytesSeq.length + ". This will probably return a lot of results!");
+        }
+
+        const searchResults = {};
+        const results = [];
+
+        const memory = this.memory("i8");
+
+        let count = 0;
+        let match = 0;
+
+        if (this.debugLevel >= 1) {
+            colorLog("bytesSequence: entering bytes sequence search");
+        }
+
+        // Load an array with the bytes sequence (hex) before starting, 
+        // skipping first element (empty)
+        const bytes = bytesSeq.trim().split(/\\\\x/);
+        bytes.shift();
+
+        for (let i = 0; i < memory.length; i++) {
+            const thisByte = memory[i];
+
+            // TODO: Optimize this one, avoid conversion every time
+            if ( thisByte == parseInt(bytes[match],16)) {  
+                match++;     
+                continue;       
+            }
+            
+            if (match == bytes.length) {
+
+                results[i - bytes.length] = bytesSeq;
+                count++;
+                match = 0;
+
+                if (this.debugLevel >= 2) {
+                    colorLog("bytesSequence: sequence found: " + bytesSeq);
+                }
+            } else {
+                match = 0;
+            }
+        }
+
+        if (this.debugLevel >= 1) {
+            colorLog("bytesSequence: exiting bytes sequence search");
+        }
+
+        searchResults.count = count;
+        searchResults.results = results;
+
+        return searchResults;
     }
 }
 
@@ -468,6 +598,10 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
     if (typeof msgType !== "string") {
         return;
     }
+    
+    if (this.debugLevel >= 2) {
+        colorLog("addEventListener: event received: " + msgType);
+    }
 
     switch (msgType) {
         case "queryMemory":
@@ -492,6 +626,7 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
 
             break;
         case "search":
+            const searchNumStr      = msgBody.numStr;
             const searchMemType     = msgBody.memType;
             const searchComparison  = msgBody.compare;
             const searchLower       = msgBody.lower;
@@ -502,14 +637,54 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
             let searchResults;
             let searchResultsCount;
 
-            searchReturn = cetus.search(searchComparison,
-                                         searchMemType,
-                                         searchParam,
-                                         searchLower,
-                                         searchUpper);
+            switch(searchNumStr) {
+                case "num":
+                    // Numeric search
+                    if (this.debugLevel >= 1) {
+                        colorLog("addEventListener: starting numeric search with value " + searchParam);
+                    }
+                    searchReturn = cetus.search(searchComparison,
+                                                 searchMemType,
+                                                 searchParam,
+                                                 searchLower,
+                                                 searchUpper);
+        
+                    searchResultsCount = searchReturn.count;
+                    searchResults = searchReturn.results;
+                    break;
+                case "strA":
+                    // ASCII String search
+                     if (this.debugLevel >= 1) {
+                        colorLog("addEventListener: starting ASCII string search with value " + searchParam);
+                    }
 
-            searchResultsCount = searchReturn.count;
-            searchResults = searchReturn.results;
+                    searchReturn = cetus.asciiStrings(searchParam);
+                    searchResultsCount = searchReturn.count;
+                    searchResults = searchReturn.results;
+                    break;
+                case "strU":
+                    // UNICODE String search
+                     if (this.debugLevel >= 1) {
+                        colorLog("addEventListener: starting UNICODE string search with value " + searchParam);
+                    }
+
+                    searchReturn = cetus.unicodeStrings(searchParam);
+                    searchResultsCount = searchReturn.count;
+                    searchResults = searchReturn.results;
+                    break;
+                case "bytes":
+                    // Bytes sequence search
+                     if (this.debugLevel >= 1) {
+                        colorLog("addEventListener: starting Bytes sequence search with value " + searchParam);
+                    }
+
+                    searchReturn = cetus.bytesSequence(searchParam);
+                    searchResultsCount = searchReturn.count;
+                    searchResults = searchReturn.results;
+                    break;
+                default:
+                    break;
+            }
 
             let subset = {};
 

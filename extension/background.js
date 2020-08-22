@@ -128,6 +128,7 @@ class BackgroundExtension {
             stackTraces: [],
             searchForm: {
                 value: "",
+                numStr: "int",
                 comparison: "eq",
                 valueType: "i32",
                 rangeUpper: "",
@@ -313,6 +314,7 @@ const popupMessageListener = function(msg) {
         case "search":
             const forwardMsg = {};
 
+            const searchNumStr = msgBody.numStr;
             const searchValue = msgBody.param;
             const searchMemType = msgBody.memType;
             const searchComp = msgBody.compare;
@@ -321,12 +323,14 @@ const popupMessageListener = function(msg) {
 
             bgExtension.popupData.searchForm.inProgress = true;
 
+            bgExtension.popupData.searchForm.numStr = searchNumStr;
             bgExtension.popupData.searchForm.value = searchValue;
             bgExtension.popupData.searchForm.valueType = searchMemType;
             bgExtension.popupData.searchForm.comparison = searchComp;
             bgExtension.popupData.searchForm.rangeLower = searchLower;
             bgExtension.popupData.searchForm.rangeUpper = searchUpper;
 
+            forwardMsg.numStr = searchNumStr;
             forwardMsg.param = searchValue;
             forwardMsg.memType = searchMemType;
             forwardMsg.compare = searchComp;

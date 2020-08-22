@@ -94,9 +94,44 @@
     <div class="container">
         <form id="searchForm" class="form compare-form">
           <label class="form-field">
-            Value (Empty for Differential Search)
+            Value (Empty for Numeric Differential Search)
             <input type="text" id="searchParam" name="param" value="" class="input" placeholder="Enter value">
           </label>
+
+          <div class="form-field">
+            Search type
+            <div class="form-field--group" id="numStrSelector">
+              <div class="radio">
+                <input type="radio" name="numStrSelection" value="num" class="radio-input" checked>
+                <div class="radio-body">
+                  <span></span>
+                  Num
+                </div>
+              </div>
+              <div class="radio">
+                <input type="radio" name="numStrSelection" value="strA" class="radio-input">
+                <div class="radio-body">
+                  <span></span>
+                  StrASCII >
+                </div>
+              </div>
+              <div class="radio">
+                <input type="radio" name="numStrSelection" value="strU" class="radio-input">
+                <div class="radio-body">
+                  <span></span>
+                  StrUNICODE >
+                </div>
+              </div>
+              <div class="radio">
+                <input type="radio" name="numStrSelection" value="bytes" class="radio-input">
+                <div class="radio-body">
+                  <span></span>
+                  Bytes Seq
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="form-field">
             Comparison operator
             <div class="form-field--group">
