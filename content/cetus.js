@@ -36,7 +36,7 @@ class Cetus {
 
         this.speedhack = new SpeedHack(1);
 
-        this.debugLevel = 3;
+        this.debugLevel = 0;
 
         if (this.debugLevel >= 1) {
             colorLog("constructor: Cetus initialized");
@@ -627,7 +627,7 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
             break;
         case "search":
             const searchNumStr      = msgBody.numStr;
-            let   searchMemType     = msgBody.memType;
+            const searchMemType     = msgBody.memType;
             const searchComparison  = msgBody.compare;
             const searchLower       = msgBody.lower;
             const searchUpper       = msgBody.upper;
