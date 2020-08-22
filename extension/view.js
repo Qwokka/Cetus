@@ -26,11 +26,7 @@ document.getElementById('restartBtn').onclick = function(e) {
 	document.getElementById('searchLower').value = '';
 	document.getElementById('searchUpper').value = '';
 
-	const typeRadioButtons = document.getElementsByName('type');
-
-	for (let i = 0; i < typeRadioButtons.length; i++) {
-		typeRadioButtons[i].disabled = false;
-	}
+    enableSearchFormTypes();
 
 	e.target.disabled = true;
 };
@@ -95,11 +91,7 @@ document.getElementById('searchForm').onsubmit = function(e) {
 	document.getElementById('resultsTitle').innerText = '';
 	document.getElementById('resultsTitle').innerText = 'Searching...';
 
-	const typeRadioButtons = document.getElementsByName('type');
-
-	for (let i = 0; i < typeRadioButtons.length; i++) {
-		typeRadioButtons[i].disabled = true;
-	}
+    disableSearchFormTypes();
 };
 
 document.getElementById('numStrSelector').onclick = function(e) {
@@ -506,6 +498,38 @@ const updateSearchForm = function(searchData) {
 	if (searchInProgress) {
 		updateSearchResults(resultCount, resultObject, searchType);
 	}
+};
+
+const enableSearchFormCompare = function() {
+    const typeRadioButtons = document.getElementsByName('compare');
+
+    for (let i = 0; i < typeRadioButtons.length; i++) {
+        typeRadioButtons[i].disabled = false;
+    }
+};
+
+const disableSearchFormCompare = function() {
+    const typeRadioButtons = document.getElementsByName('compare');
+
+    for (let i = 0; i < typeRadioButtons.length; i++) {
+        typeRadioButtons[i].disabled = true;
+    }
+};
+
+const enableSearchFormTypes = function() {
+    const typeRadioButtons = document.getElementsByName('type');
+
+    for (let i = 0; i < typeRadioButtons.length; i++) {
+        typeRadioButtons[i].disabled = false;
+    }
+};
+
+const disableSearchFormTypes = function() {
+    const typeRadioButtons = document.getElementsByName('type');
+
+    for (let i = 0; i < typeRadioButtons.length; i++) {
+        typeRadioButtons[i].disabled = true;
+    }
 };
 
 const updateSearchResults = function(resultCount, resultObject, resultMemType) {
