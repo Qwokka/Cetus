@@ -44,12 +44,21 @@ class BackgroundExtension {
                 type: null,
                 comparison: "eq",
                 valueType: "i32",
+                memAlign: true,
                 rangeUpper: "",
                 rangeLower: "",
                 results: {
                     count: 0,
                     object: {},
                 },
+            },
+            stringForm: {
+                strType: "ascii",
+                strMinLen: 4,
+                results: {
+                    count: 0,
+                    object: {},
+                }
             },
             patchForm: {
                 funcIndex: null,
@@ -59,10 +68,12 @@ class BackgroundExtension {
                 enabled: false,
                 multiplier: 2,
             },
-            currentTab: "tabOne",
+            // FIXME This isn't used, but we should update the current tab for the popup view
+            currentTab: "tabSearch",
         };
 
         this.pendingSearch = false;
+        this.pendingStringSearch = false;
         this.pendingFunctionIndex = null;
     }
 
@@ -128,9 +139,9 @@ class BackgroundExtension {
             stackTraces: [],
             searchForm: {
                 value: "",
-                numStr: "int",
                 comparison: "eq",
                 valueType: "i32",
+                memAlign: true,
                 rangeUpper: "",
                 rangeLower: "",
                 results: {
@@ -145,7 +156,7 @@ class BackgroundExtension {
             speedhack: {
                 multiplier: null,
             },
-            currentTab: "tabOne",
+            currentTab: "tabSearch",
         };
 
         this.popupRestore();
@@ -314,25 +325,25 @@ const popupMessageListener = function(msg) {
         case "search":
             const forwardMsg = {};
 
-            const searchNumStr = msgBody.numStr;
             const searchValue = msgBody.param;
             const searchMemType = msgBody.memType;
+            const searchMemAlign = msgBody.memAlign;
             const searchComp = msgBody.compare;
             const searchLower = msgBody.lower;
             const searchUpper = msgBody.upper;
 
             bgExtension.popupData.searchForm.inProgress = true;
 
-            bgExtension.popupData.searchForm.numStr = searchNumStr;
             bgExtension.popupData.searchForm.value = searchValue;
             bgExtension.popupData.searchForm.valueType = searchMemType;
+            bgExtension.popupData.searchForm.memAlign = searchMemAlign;
             bgExtension.popupData.searchForm.comparison = searchComp;
             bgExtension.popupData.searchForm.rangeLower = searchLower;
             bgExtension.popupData.searchForm.rangeUpper = searchUpper;
 
-            forwardMsg.numStr = searchNumStr;
             forwardMsg.param = searchValue;
             forwardMsg.memType = searchMemType;
+            forwardMsg.memAlign = searchMemAlign;
             forwardMsg.compare = searchComp;
             forwardMsg.lower = searchLower;
             forwardMsg.upper = searchUpper;
@@ -376,7 +387,7 @@ const popupMessageListener = function(msg) {
             const modifyMemIndex = realAddressToIndex(modifyMemAddr, modifyMemType);
 
             const newMsgBody = {
-                memIndex: modifyMemIndex,
+                memAddr: modifyMemAddr,
                 memValue: modifyMemValue,
                 memType: modifyMemType
             };
@@ -409,6 +420,25 @@ const popupMessageListener = function(msg) {
             const flags = msgBody.flags;
 
             bgExtension.updateWatchpoint(watchMemAddr, watchMemValue, flags);
+
+            break;
+        case "stringSearch":
+            const strType = msgBody.strType;
+            const strLower = msgBody.lower;
+            const strUpper = msgBody.upper;
+            const strMin = msgBody.minLength;
+
+            sendContentMessage("stringSearch", {
+                strType: strType,
+                lower: strLower,
+                upper: strUpper,
+                minLength: strMin,
+            });
+
+            bgExtension.popupData.stringForm.strType = strType;
+            bgExtension.popupData.stringForm.strMinLen = strMin;
+
+            bgExtension.pendingStringSearch = true;
 
             break;
         case "queryFunction":
@@ -507,23 +537,22 @@ chrome.runtime.onMessage.addListener(function(msgRaw) {
 
             break;
         case "queryMemoryResult":
-            const index = msgBody.index;
+            const address = msgBody.address;
             const value = msgBody.value;
             const memType = msgBody.memType;
 
-            if (typeof index !== "number" ||
+            if (typeof address !== "number" ||
                 typeof value !== "number" ||
                 !isValidMemType(memType)) {
+                console.warn("Got bad queryMemoryResult: address " + address + " value " + value);
                 return;
             }
 
-            const realAddr = indexToRealAddress(index, memType);
-
-            if (typeof bgExtension.bookmarks[realAddr] !== "object") {
+            if (typeof bgExtension.bookmarks[address] !== "object") {
                 return;
             }
 
-            bgExtension.bookmarks[realAddr].value = value;
+            bgExtension.bookmarks[address].value = value;
             bgExtension.updateBookmarks();
 
             break;
@@ -568,6 +597,33 @@ chrome.runtime.onMessage.addListener(function(msgRaw) {
             }
 
             bgExtension.addBookmark(bookmarkIndex, bookmarkMemType);
+
+            break;
+        case "stringSearchResult":
+            if (!bgExtension.pendingStringSearch) {
+                return;
+            }
+
+            const count = msgBody.count;
+            const resultObj = msgBody.results;
+
+            if (typeof count !== "number" || typeof resultObj !== "object") {
+                return;
+            }
+
+            // All keys in resultObject should be numeric. If not, toss the whole thing
+            for (let entry in resultObj) {
+                if (bigintIsNaN(entry)) {
+                    return;
+                }
+            }
+
+            bgExtension.popupData.stringForm.results.count = count;
+            bgExtension.popupData.stringForm.results.object = resultObj;
+
+            bgExtension.passthruPopupMessage(msg);
+
+            bgExtension.pendingStringSearch = false;
 
             break;
         case "queryFunctionResult":
@@ -674,10 +730,8 @@ setInterval(function() {
     for (const address of Object.keys(bgExtension.bookmarks)) {
         const memType = bgExtension.bookmarks[address].memType;
 
-        const memIndex = realAddressToIndex(address, memType);
-
         sendContentMessage("queryMemory", {
-            index: memIndex,
+            address: parseInt(address),
             memType: memType,
         });
     }

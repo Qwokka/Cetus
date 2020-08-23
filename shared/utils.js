@@ -79,6 +79,9 @@ const isValidMemType = function(memType) {
         case "f32":
         case "i64":
         case "f64":
+        case "ascii":
+        case "utf-8":
+        case "bytes":
             return true;
         default:
             return false;
@@ -90,8 +93,11 @@ const getElementSize = function(type) {
     
     switch (type) {
         case "i8":
+        case "ascii":
+        case "bytes":
             indexSize = 1;
             break;
+        case "utf-8":
         case "i16":
             indexSize = 2;
             break;
@@ -113,6 +119,28 @@ const getElementSize = function(type) {
     
     return indexSize;
 };
+
+const getMemoryType = function(memType) {
+    switch (memType) {
+        case "i8":
+        case "ascii":
+        case "bytes":
+            return Uint8Array;
+        case "i16":
+        case "utf-8":
+            return Uint16Array;
+        case "i32":
+            return Uint32Array;
+        case "i64":
+            return BigInt64Array;
+        case "f32":
+            return Float32Array;
+        case "f64":
+            return Float64Array;
+        default:
+            throw new Error("Invalid memory type " + memType + " in getMemoryType()");
+    }
+}
 
 // Converts the index into a TypedArray into the "real" memory address
 // For example, index 0x1000 into the Int32Array translates to address 0x4000

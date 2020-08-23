@@ -26,15 +26,14 @@ document.getElementById('restartBtn').onclick = function(e) {
 	document.getElementById('searchLower').value = '';
 	document.getElementById('searchUpper').value = '';
 
-	const typeRadioButtons = document.getElementsByName('type');
-
-	for (let i = 0; i < typeRadioButtons.length; i++) {
-		typeRadioButtons[i].disabled = false;
-	}
+    enableSearchFormTypes();
+    enableSearchFormCompare();
+    enableSearchFormAlignment();
 
 	e.target.disabled = true;
 };
 
+// TODO We need to disable the comparison and type fields when doing a string/byte sequence search
 document.getElementById('searchForm').onsubmit = function(e) {
 	e.preventDefault();
 
@@ -47,10 +46,10 @@ document.getElementById('searchForm').onsubmit = function(e) {
 
 	const compare = radio.value;
 	const memType = form.type.value;
-	// Selector for the string/numeric search
-	const numStr = form.numStrSelection.value;
+    const memAlign = form.alignment.value == "aligned" ? true : false;
 
-	let param = form.param.value;
+	let oldParam = form.param.value;
+    let newParam;
 
 	let lowerAddr = form.lower.value;
 	let upperAddr = form.upper.value;
@@ -63,73 +62,103 @@ document.getElementById('searchForm').onsubmit = function(e) {
 		upperAddr = 0xffffffff;
 	}
 
-	const lowerIndex = realAddressToIndex(lowerAddr, memType);
-	const upperIndex = realAddressToIndex(upperAddr, memType);
-
 	extension.searchMemType = memType;
 
-	if (numStr != "bytes" && (bigintIsNaN(param) || param == '')) {
-		param = null;
-	} else if (numStr.localeCompare("bytes") == 0) {
-  		// Validate "bytes" input
-  		const split1 = [...param.trim().matchAll(/\\\\x[0-9a-f]{2}(?![0-9a-z])/gi)];
-  		const split2 = param.trim().split(/\\\\x/);
+    switch (memType) {
 
-  		if ((split1.length != (split2.length - 1)) || split1.length == 0) {
-  			// Something is wrong in the byte sequence
-  			console.error("Wrong byte sequence format");
-  			return;
-		}
+    }
+
+	if (oldParam == "") {
+		oldParam = null;
+    }
+    else {
+        switch (memType) {
+            case "i8":
+            case "i16":
+            case "i32":
+            case "i64":
+                // TODO The extension/popup view needs actual error reporting
+                if (bigintIsNaN(oldParam)) {
+                    console.warn("Got invalid number " + oldParam);
+                    return;
+                }
+
+                newParam = parseInt(oldParam);
+
+                break;
+            case "f32":
+            case "f64":
+                if (bigintIsNaN(oldParam)) {
+                    console.warn("Got invalid number " + oldParam);
+                    return;
+                }
+
+                newParam = parseFloat(oldParam);
+
+                break;
+            // TODO We need actual error checking here, but the UI has no good way to report errors
+            // so we let the content script do the error handling
+            case "ascii":
+            case "utf-8":
+            case "bytes":
+                newParam = oldParam;
+
+                break;
+            default:
+                throw new Error("Bad memType " + memType);
+        }
     }
 
 	// TODO Make consistent with background.js
 	extension.sendBGMessage('search', {
-		numStr: numStr,
 		memType: memType,
+        memAlign: memAlign,
 		compare: compare,
-		param: param,
-		lower: lowerIndex,
-		upper: upperIndex
+		param: newParam,
+		lower: lowerAddr,
+		upper: upperAddr
 	});
 
-	document.getElementById('resultsTitle').innerText = '';
 	document.getElementById('resultsTitle').innerText = 'Searching...';
 
-	const typeRadioButtons = document.getElementsByName('type');
-
-	for (let i = 0; i < typeRadioButtons.length; i++) {
-		typeRadioButtons[i].disabled = true;
-	}
+    disableSearchFormTypes();
+    disableSearchFormAlignment();
 };
 
-document.getElementById('numStrSelector').onclick = function(e) {
-	
-	// If the "string" search has been selected, force the type to "i8" 
+document.getElementById('stringForm').onsubmit = function(e) {
+    e.preventDefault();
 
-	const form = document.getElementById('searchForm');
-	const numStr = form.numStrSelection.value;
+	const form = document.getElementById('stringForm');
+	const radio = document.querySelector("input[name='stringType']:checked");
 
-	switch(numStr) {
-		case "bytes":
-			form.type.value = "i8";
-			placeHolder = form.searchParam.placeholder = "Enter Hex bytes (ex. \\\\xde\\\\xad\\\\xbe\\\\xef)";
-			updateSearchForm(form);
-			break;
-		case "strA":
-			form.type.value = "i8";
-			placeHolder = form.searchParam.placeholder = "Enter Minimum String Length";
-			updateSearchForm(form);
-			break;
-		case "strU":
-			form.type.value = "i16";
-			placeHolder = form.searchParam.placeholder = "Enter Minimum String Length";
-			updateSearchForm(form);
-			break;
-		default:
-		    placeHolder = form.searchParam.placeholder = "Enter value";
-			updateSearchForm(form);
-			break;
+    if (!radio) {
+        return;
+    }
+
+	let lowerAddr = form.lower.value;
+	let upperAddr = form.upper.value;
+    let minLength = form.minLength.value;
+
+	if (lowerAddr == '' || bigintIsNaN(lowerAddr)) {
+		lowerAddr = 0;
 	}
+
+	if (upperAddr == '' || bigintIsNaN(upperAddr)) {
+		upperAddr = 0xffffffff;
+	}
+
+	if (minLength == '' || bigintIsNaN(minLength)) {
+        minLength = 4;
+    }
+
+    const strType = radio.value;
+
+	extension.sendBGMessage('stringSearch', {
+		strType: strType,
+        lower: lowerAddr,
+        upper: upperAddr,
+        minLength: minLength,
+	});
 };
 
 document.getElementById('functionFormSearch').onsubmit = function(e) {
@@ -508,6 +537,76 @@ const updateSearchForm = function(searchData) {
 	}
 };
 
+const updateStringSearchForm = function(stringData) {
+    const strType = stringData.strType;
+    const strMinLen = stringData.strMinLen;
+    const resultCount = stringData.results.count;
+    const resultObject = stringData.results.object;
+
+    document.getElementById('strMinLength').value = strMinLen;
+
+	const typeRadios = document.getElementsByName('stringType');
+
+	for (let i = 0; i < typeRadios.length; i++) {
+		const radio = typeRadios[i];
+
+		if (radio.value == strType) {
+			radio.checked = true;
+			break;
+		}
+	}
+
+    updateStringSearchResults(resultCount, resultObject);
+}
+
+const enableSearchFormCompare = function() {
+    const radioButtons = document.getElementsByName('compare');
+
+    for (let i = 0; i < radioButtons.length; i++) {
+        radioButtons[i].disabled = false;
+    }
+};
+
+const disableSearchFormCompare = function() {
+    const radioButtons = document.getElementsByName('compare');
+
+    for (let i = 0; i < radioButtons.length; i++) {
+        radioButtons[i].disabled = true;
+    }
+};
+
+const enableSearchFormTypes = function() {
+    const radioButtons = document.getElementsByName('type');
+
+    for (let i = 0; i < radioButtons.length; i++) {
+        radioButtons[i].disabled = false;
+    }
+};
+
+const disableSearchFormTypes = function() {
+    const radioButtons = document.getElementsByName('type');
+
+    for (let i = 0; i < radioButtons.length; i++) {
+        radioButtons[i].disabled = true;
+    }
+};
+
+const enableSearchFormAlignment = function() {
+    const radioButtons = document.getElementsByName('alignment');
+
+    for (let i = 0; i < radioButtons.length; i++) {
+        radioButtons[i].disabled = false;
+    }
+};
+
+const disableSearchFormAlignment = function() {
+    const radioButtons = document.getElementsByName('alignment');
+
+    for (let i = 0; i < radioButtons.length; i++) {
+        radioButtons[i].disabled = true;
+    }
+};
+
 const updateSearchResults = function(resultCount, resultObject, resultMemType) {
 	document.getElementById('resultsTitle').innerText = resultCount + ' results';
 	document.getElementById('restartBtn').disabled = false;
@@ -525,20 +624,18 @@ const updateSearchResults = function(resultCount, resultObject, resultMemType) {
 
 	const tbody = table.createTBody();
 
-	for (const index of Object.keys(resultObject)) {
-		const value = resultObject[index];
+	for (const address of Object.keys(resultObject)) {
+		const value = resultObject[address];
 
-		// Validate both index and value 
-		if (index == null || value == null) {
+		// Validate both address and value 
+		if (address == null || value == null) {
 			continue;
 		}
-
-		const realAddress = indexToRealAddress(index, resultMemType);
 
 		row = tbody.insertRow();
 
 		cell = row.insertCell();
-		cell.innerText = toHex(realAddress);
+		cell.innerText = toHex(address);
 
 		cell = row.insertCell();
 		if (bigintIsNaN(value)) {
@@ -548,7 +645,7 @@ const updateSearchResults = function(resultCount, resultObject, resultMemType) {
         }
 
 		cell = row.insertCell();
-		const saveButton = createSaveButton(realAddress);
+		const saveButton = createSaveButton(address);
 		cell.appendChild(saveButton);
 	}
 
@@ -562,6 +659,47 @@ const updateSearchResults = function(resultCount, resultObject, resultMemType) {
 		button.onclick = saveButtonClick;
 	}
 };
+
+const updateStringSearchResults = function(resultCount, resultObject) {
+	document.getElementById('strResultsTitle').innerText = resultCount + ' results';
+
+	const table = document.createElement('table');
+	const thead = table.createTHead();
+
+	let row = thead.insertRow();
+	let cell = row.insertCell();
+
+	cell.innerText = 'Address';
+	cell = row.insertCell();
+	cell.innerText = 'Value';
+	cell = row.insertCell();
+
+	const tbody = table.createTBody();
+
+	for (const address of Object.keys(resultObject)) {
+		const value = resultObject[address];
+
+		// Validate both address and value 
+		if (address == null || value == null) {
+			continue;
+		}
+
+		row = tbody.insertRow();
+
+		cell = row.insertCell();
+		cell.innerText = toHex(address);
+
+		cell = row.insertCell();
+		if (bigintIsNaN(value)) {
+			cell.innerText = value;
+		} else {	
+			cell.innerText = formatValue(value, resultMemType);
+        }
+	}
+
+	document.getElementById('stringResults').innerHTML = '';
+	document.getElementById('stringResults').appendChild(table);
+}
 
 const updateBookmarkTable = function(bookmarks) {
 	const bookmarkMenu = document.getElementById('bookmarks');

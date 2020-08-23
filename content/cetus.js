@@ -28,6 +28,11 @@ class Cetus {
         this._buffer = env.buffer;
         this._symbols = env.symbols;
 
+        this._searchMemory;
+        this._searchMemoryType;
+        this._searchMemoryTypeStr;
+        this._searchMemoryElementSize;
+
         this._functions = null;
 
         this._searchSubset = {};
@@ -36,6 +41,7 @@ class Cetus {
 
         this.speedhack = new SpeedHack(1);
 
+        // TODO Move this to extension options page
         this.debugLevel = 0;
 
         if (this.debugLevel >= 1) {
@@ -49,38 +55,73 @@ class Cetus {
         });
     }
 
-    memory(type) {
-        const memType = this.getMemoryType(type);
+    createSearchMemory(memTypeStr, memAligned = true) {
+        if (memAligned) {
+            this._searchMemory = this.alignedMemory(memTypeStr);
+        }
+        else {
+            this._searchMemory = this.unalignedMemory();
+        }
+
+        this._searchMemoryTypeStr = memTypeStr;
+        this._searchMemoryType = getMemoryType(memTypeStr);
+        this._searchMemoryElementSize = getElementSize(memTypeStr);
+    }
+
+    // Accessing aligned memory is faster because we can just treat the whole
+    // memory object as the relevant typed array (Like Uint32Array)
+    // This is not as thorough, however, because we will miss matching values
+    // that are not stored at naturally-aligned addresses
+    alignedMemory(memTypeStr) {
+        const memType = getMemoryType(memTypeStr);
 
         // We return a new object each time because the WebAssembly.Memory object
         // will detach if it is resized
         return new memType(this._memObject.buffer);
     }
 
-    // TODO Remove from class?
-    getMemoryType(type) {
-        switch (type) {
-            case "i8":
-                return Uint8Array;
-            case "i16":
-                return Uint16Array;
-            case "i32":
-                return Uint32Array;
-            case "i64":
-                return BigInt64Array;
-            case "f32":
-                return Float32Array;
-            case "f64":
-                return Float64Array;
-            default:
-                throw new Error("Invalid memory type " + type + " in getMemoryType()");
-        }
+    // When we need to access unaligned memory addresses, we treat memory as a
+    // Uint8Array so that we can read at any "real" address
+    unalignedMemory() {
+        return new Uint8Array(this._memObject.buffer);
     }
 
-    queryMemory(memIndex, memType) {
-        const memory = this.memory(memType);
+    getMemorySize() {
+        return this.unalignedMemory().length;
+    }
 
-        return memory[memIndex];
+    queryMemory(address, memTypeStr) {
+        const memory = this.unalignedMemory();
+        const memType = getMemoryType(memTypeStr);
+        const memSize = getElementSize(memTypeStr);
+
+        const tempBuf = new Uint8Array(memSize);
+
+        for (let i = 0; i < tempBuf.length; i++) {
+            tempBuf[i] = memory[address + i];
+        }
+
+        return new memType(tempBuf.buffer)[0];
+    }
+
+    // These two functions should typically only be used by the internal search
+    // They use pre-loaded values to speed up the process of doing repetitive searches
+    _queryMemoryUnalignedQuick(address) {
+        const tempBuf = new Uint8Array(this._searchMemoryElementSize);
+
+        address = parseInt(address);
+
+        for (let i = 0; i < this._searchMemoryElementSize; i++) {
+            tempBuf[i] = this._searchMemory[address + i];
+        }
+
+        return new this._searchMemoryType(tempBuf.buffer)[0];
+    }
+
+    _queryMemoryAlignedQuick(address) {
+        const memIndex = realAddressToIndex(address, this._searchMemoryTypeStr);
+
+        return this._searchMemory[memIndex];
     }
 
     restartSearch() {
@@ -93,31 +134,42 @@ class Cetus {
         }
     }
 
-    _compare(comparator, memType, lowerBound, upperBound) {
-        const memory = this.memory(memType);
-
+    _compare(comparator, memType, memAligned, lowerBound, upperBound) {
         const searchKeys = Object.keys(this._searchSubset);
 
         if (searchKeys.length == 0) {
-            if (this.debugLevel >= 1) {
-                colorLog("_compare: entering raw search");
+            if (memAligned) {
+                const memSize = getElementSize(memType);
+
+                for (let i = lowerBound; i <= upperBound; i += memSize) {
+                    const currentValue = this._queryMemoryAlignedQuick(i, memType);
+
+                    if (comparator(currentValue) == true) {
+                        this._searchSubset[i] = currentValue;
+                    }
+                }
             }
+            else {
+                for (let i = lowerBound; i <= upperBound; i++) {
+                    const currentValue = this._queryMemoryUnalignedQuick(i, memType);
 
-            for (let i = lowerBound; i <= upperBound; i++) {
-                const currentValue = memory[i];
-
-                if (comparator(currentValue) == true) {
-                    this._searchSubset[i] = currentValue;
+                    if (comparator(currentValue) == true) {
+                        this._searchSubset[i] = currentValue;
+                    }
                 }
             }
         }
         else {
-            if (this.debugLevel >= 1) {
-                colorLog("_compare: entering subset search");
-            }
-
             for (let entry in this._searchSubset) {
-                const currentValue = memory[entry];
+                let currentValue;
+
+                if (memAligned) {
+                    currentValue = this._queryMemoryAlignedQuick(entry, memType);
+                }
+                else {
+                    currentValue = this._queryMemoryUnalignedQuick(entry, memType);
+                }
+
                 if (this.debugLevel >= 3) {
                     colorLog("_compare: Looping subset search. Entry: " + entry + "  Value: " + currentValue);
                 }                
@@ -163,8 +215,8 @@ class Cetus {
         return this._searchSubset;
     }
 
-    search(searchComparison, searchMemType, searchParam, lowerBound = 0, upperBound = 0xFFFFFFFF) {
-        const memory = this.memory(searchMemType);
+    search(searchComparison, searchMemType, searchMemAlign, searchParam, lowerBound = 0, upperBound = 0xFFFFFFFF) {
+        this.createSearchMemory(searchMemType, searchMemAlign);
 
         let realLowerBound = parseInt(lowerBound);
         let realUpperBound = parseInt(upperBound);
@@ -173,15 +225,18 @@ class Cetus {
             realLowerBound = 0;
         }
 
-        if (realUpperBound >= memory.length) {
-            realUpperBound = memory.length - 1;
+        // If we are searching aligned addresses, we want to make sure our lower bound is aligned
+        if (searchMemAlign) {
+            realLowerBound -= (realLowerBound % getElementSize(searchMemType));
+        }
+
+        const memSize = this.getMemorySize();
+
+        if (realUpperBound >= memSize) {
+            realUpperBound = memSize - 1;
         }
 
         let comparator;
-
-        if (this.debugLevel >= 1) {
-            colorLog("search: entering Numeric search");
-        }
 
         switch (searchComparison) {
             case "eq":
@@ -245,6 +300,7 @@ class Cetus {
         else {
             let searchReturn = this._compare(comparator,
                                              searchMemType,
+                                             searchMemAlign,
                                              realLowerBound,
                                              realUpperBound);
 
@@ -253,10 +309,83 @@ class Cetus {
         }
 
         if (this.debugLevel >= 1) {
-            colorLog("search: exiting Numeric search");
+            colorLog("search: exiting search");
         }
 
         return searchResults;
+    }
+
+    patternSearch(searchMemType, searchParam, lowerBound, upperBound) {
+        const result = {};
+
+        let realLowerBound = parseInt(lowerBound);
+        let realUpperBound = parseInt(upperBound);
+
+        if (realLowerBound < 0) {
+            realLowerBound = 0;
+        }
+
+        const memSize = this.getMemorySize();
+
+        if (realUpperBound >= memSize) {
+            realUpperBound = memSize - 1;
+        }
+
+        let realParam;
+
+        switch (searchMemType) {
+            case "ascii":
+                realParam = new Uint8Array(searchParam.length);
+
+                for (let i = 0; i < searchParam.length; i++) {
+                    realParam[i] = searchParam.charCodeAt(i);
+                }
+
+                break;
+            case "utf-8":
+                const tempBuf = new Uint16Array(searchParams.length);
+
+                for (let i = 0; i < searchParam.length; i++) {
+                    realParam[i] = searchParam.charCodeAt(i);
+                }
+
+                realParam = new Uint8Array(tempBuf.buffer);
+
+                break;
+            case "bytes":
+                const split1 = [...searchParam.trim().matchAll(/\\x[0-9a-f]{2}(?![0-9a-z])/gi)];
+                const split2 = searchParam.trim().split(/\\x/);
+
+                if ((split1.length != (split2.length - 1)) || split1.length == 0) {
+                    // Something is wrong in the byte sequence
+                    console.error("Wrong byte sequence format");
+                    return;
+                }
+
+                split2.shift();
+
+                realParam = new Uint8Array(split2.length);
+
+                for (let i = 0; i < searchParam.length; i++) {
+                    realParam[i] = parseInt(split2[i], 16);
+                }
+
+                break;
+        }
+
+        const searchResults = this.bytesSequence(realParam);
+
+        result.results = {};
+
+        for (let i = 0; i < searchResults.length; i++) {
+            const hitAddr = searchResults[i];
+
+            result.results[hitAddr] = searchParam;
+        }
+
+        result.count = searchResults.length;
+
+        return result;
     }
 
     setSpeedhackMultiplier(multiplier) {
@@ -300,8 +429,8 @@ class Cetus {
     }
 
     // Cetus API function used to manually add bookmarks
-    addBookmark(memIndex, memType) {
-        if (typeof memIndex !== "number") {
+    addBookmark(memAddr, memType) {
+        if (typeof memAddr !== "number") {
             throw new Error("addBookmark() expects argument 0 to be a number");
         }
 
@@ -310,27 +439,32 @@ class Cetus {
         }
 
         sendExtensionMessage("addBookmark", {
-            index: memIndex,
+            address: memAddr,
             memType: memType
         });
     }
 
     // Cetus API function for manually modifying memory
-    // TODO Properly deal with misaligned addresses
-    modifyMemory(memAddr, memValue, memType = "i32") {
-        const memory = this.memory(memType);
+    modifyMemory(memAddr, memValue, memTypeStr = "i32") {
+        const memory = this.unalignedMemory(memTypeStr);
+        const memType = getMemoryType(memTypeStr);
 
-        const memIndex = realAddressToIndex(memAddr, memType);
+        memAddr = parseInt(memAddr);
 
-        if (memIndex < 0 || memIndex >= memory.length) {
+        if (memAddr < 0 || memAddr >= memory.length) {
             throw new RangeError("Address out of range in Cetus.modifyMemory()");
         }
 
-        memory[memIndex] = memValue;
+        const tempBuf = new memType(1);
+        tempBuf[0] = memValue;
+
+        const byteBuf = new Uint8Array(tempBuf.buffer);
+
+        for (let i = 0; i < byteBuf.length; i++) {
+            memory[memAddr + i] = byteBuf[i];
+        }
     }
 
-    // TODO Implement this in the UI
-    // FIXME: needed?
     strings(minLength = 4) {
         let ascii =  this.asciiStrings(minLength);
         let unicode = this.unicodeStrings(minLength);
@@ -341,19 +475,21 @@ class Cetus {
     asciiStrings(minLength = 4) {
         if (minLength < 1) {
             console.error("Minimum length must be at least 1!");
-            return;
+            return {
+                count: 0,
+                results: {}
+            };
         }
         else if (minLength < 4) {
             console.warn("Using minimum length " + minLength + ". This will probably return a lot of results!");
         }
 
-        const searchResults = {};
-        const results = [];
+        const memory = this.alignedMemory("i8");
 
-        const memory = this.memory("i8");
+        const searchResults = {};
+        const results = {};
 
         let current = [];
-        let count = 0;
 
         if (this.debugLevel >= 1) {
             colorLog("asciiStrings: entering ASCII string search");
@@ -375,22 +511,20 @@ class Cetus {
                 }
 
                 results[i - current.length] = thisString;
-                count++;
-                current = [];
 
-                if (this.debugLevel >= 2) {
+                if (this.debugLevel >= 3) {
                     colorLog("asciiStrings: string found: " + thisString);
                 }
-            } else {
-                current = [];
             }
+
+            current = [];
         }
 
         if (this.debugLevel >= 1) {
             colorLog("asciiStrings: exiting ASCII string search");
         }
 
-        searchResults.count = count;
+        searchResults.count = Object.keys(results).length;
         searchResults.results = results;
 
         return searchResults;
@@ -399,19 +533,21 @@ class Cetus {
     unicodeStrings(minLength = 4) {
         if (minLength < 1) {
             console.error("Minimum length must be at least 1!");
-            return;
+            return {
+                count: 0,
+                results: {}
+            };
         }
         else if (minLength < 4) {
             console.warn("Using minimum length " + minLength + ". This will probably return a lot of results!");
         }
 
         const searchResults = {};
-        const results = [];
+        const results = {};
 
-        const memory = this.memory("i16");
+        const memory = this.alignedMemory("i16");
 
         let current = [];
-        let count = 0;
 
         if (this.debugLevel >= 1) {
             colorLog("unicodeStrings: entering UNICODE string search");
@@ -434,71 +570,60 @@ class Cetus {
 
                 if (thisString.length >= minLength) {
                     results[i - current.length] = thisString;
-                    count++;
 
-                    if (this.debugLevel >= 2) {
+                    if (this.debugLevel >= 3) {
                         colorLog("unicodeStrings: string found: " + thisString);
                     }
-
                 }    
-                current = [];
-            } else {
-                current = [];
             }
+
+            current = [];
         }
 
         if (this.debugLevel >= 1) {
             colorLog("unicodeStrings: exiting UNICODE string search");
         }
 
-        searchResults.count = count;
+        searchResults.count = Object.keys(results).length;
         searchResults.results = results;
 
         return searchResults;
     }
 
     bytesSequence(bytesSeq) {
+        if (this.debugLevel >= 1) {
+            colorLog("bytesSequence: entering bytes sequence search with parameter " + bytesSeq);
+        }
+
         if (bytesSeq.length < 1) {
             console.error("Minimum length must be at least 1!");
-            return;
+            return [];
         }
         else if (bytesSeq.length < 4) {
             console.warn("Sequence length is small: " + bytesSeq.length + ". This will probably return a lot of results!");
         }
 
-        const searchResults = {};
         const results = [];
 
-        const memory = this.memory("i8");
+        const memory = this.alignedMemory("i8");
 
-        let count = 0;
         let match = 0;
-
-        if (this.debugLevel >= 1) {
-            colorLog("bytesSequence: entering bytes sequence search");
-        }
-
-        // Load an array with the bytes sequence (hex) before starting, 
-        // skipping first element (empty)
-        const bytes = bytesSeq.trim().split(/\\\\x/);
-        bytes.shift();
 
         for (let i = 0; i < memory.length; i++) {
             const thisByte = memory[i];
 
             // TODO: Optimize this one, avoid conversion every time
-            if ( thisByte == parseInt(bytes[match],16)) {  
-                match++;     
-                continue;       
+            if (thisByte == bytesSeq[i]) {  
+                match++;
+                continue;
             }
             
-            if (match == bytes.length) {
+            if (match == bytesSeq.length) {
 
-                results[i - bytes.length] = bytesSeq;
-                count++;
+                results.push(i - bytesSeq.length);
                 match = 0;
 
-                if (this.debugLevel >= 2) {
+                if (this.debugLevel >= 3) {
                     colorLog("bytesSequence: sequence found: " + bytesSeq);
                 }
             } else {
@@ -510,10 +635,7 @@ class Cetus {
             colorLog("bytesSequence: exiting bytes sequence search");
         }
 
-        searchResults.count = count;
-        searchResults.results = results;
-
-        return searchResults;
+        return results;
     }
 }
 
@@ -579,6 +701,10 @@ const sendExtensionMessage = function(type, msg) {
         body: msg
     };
 
+    if (cetus !== null && cetus.debugLevel >= 2) {
+        colorLog("Sending message to extension: " + bigintJsonStringify(msgBody));
+    }
+
     const evt = new CustomEvent("cetusMsgIn", { detail: bigintJsonStringify(msgBody) } );
 
     window.dispatchEvent(evt);
@@ -599,23 +725,23 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
         return;
     }
     
-    if (this.debugLevel >= 2) {
-        colorLog("addEventListener: event received: " + msgType);
+    if (cetus !== null && cetus.debugLevel >= 2) {
+        colorLog("addEventListener: event received: " + JSON.stringify(msg));
     }
 
     switch (msgType) {
         case "queryMemory":
-            const queryIndex = msgBody.index;
+            const queryAddr = msgBody.address;
             const queryMemType = msgBody.memType;
 
-            if (typeof queryIndex !== "number") {
+            if (typeof queryAddr !== "number") {
                 return;
             }
 
-            const queryResult = cetus.queryMemory(queryIndex, queryMemType);
+            const queryResult = cetus.queryMemory(queryAddr, queryMemType);
 
             sendExtensionMessage("queryMemoryResult", {
-                index: queryIndex,
+                address: queryAddr,
                 value: queryResult,
                 memType: queryMemType
             });
@@ -626,8 +752,8 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
 
             break;
         case "search":
-            const searchNumStr      = msgBody.numStr;
             const searchMemType     = msgBody.memType;
+            const searchMemAlign    = msgBody.memAlign;
             const searchComparison  = msgBody.compare;
             const searchLower       = msgBody.lower;
             const searchUpper       = msgBody.upper;
@@ -637,54 +763,20 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
             let searchResults;
             let searchResultsCount;
 
-            switch(searchNumStr) {
-                case "num":
-                    // Numeric search
-                    if (this.debugLevel >= 1) {
-                        colorLog("addEventListener: starting numeric search with value " + searchParam);
-                    }
-                    searchReturn = cetus.search(searchComparison,
-                                                 searchMemType,
-                                                 searchParam,
-                                                 searchLower,
-                                                 searchUpper);
-        
-                    searchResultsCount = searchReturn.count;
-                    searchResults = searchReturn.results;
-                    break;
-                case "strA":
-                    // ASCII String search
-                     if (this.debugLevel >= 1) {
-                        colorLog("addEventListener: starting ASCII string search with value " + searchParam);
-                    }
-
-                    searchReturn = cetus.asciiStrings(searchParam);
-                    searchResultsCount = searchReturn.count;
-                    searchResults = searchReturn.results;
-                    break;
-                case "strU":
-                    // UNICODE String search
-                     if (this.debugLevel >= 1) {
-                        colorLog("addEventListener: starting UNICODE string search with value " + searchParam);
-                    }
-
-                    searchReturn = cetus.unicodeStrings(searchParam);
-                    searchResultsCount = searchReturn.count;
-                    searchResults = searchReturn.results;
-                    break;
-                case "bytes":
-                    // Bytes sequence search
-                     if (this.debugLevel >= 1) {
-                        colorLog("addEventListener: starting Bytes sequence search with value " + searchParam);
-                    }
-
-                    searchReturn = cetus.bytesSequence(searchParam);
-                    searchResultsCount = searchReturn.count;
-                    searchResults = searchReturn.results;
-                    break;
-                default:
-                    break;
+            if (searchMemType == "ascii" || searchMemType == "utf-8" || searchMemType == "bytes") {
+                searchReturn = cetus.patternSearch(searchMemType, searchParam, searchLower, searchUpper);
             }
+            else {
+                searchReturn = cetus.search(searchComparison,
+                                            searchMemType,
+                                            searchMemAlign,
+                                            searchParam,
+                                            searchLower,
+                                            searchUpper);
+            }
+
+            searchResultsCount = searchReturn.count;
+            searchResults = searchReturn.results;
 
             let subset = {};
 
@@ -709,20 +801,62 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
             });
 
             break;
+        // FIXME Upper/lower bounds are not enforced
+        case "stringSearch":
+            const searchStrType = msgBody.strType;
+            const searchStrMinLen = msgBody.minLength;
+
+            let strSearchReturn;
+
+            switch (searchStrType) {
+                case "ascii":
+                    strSearchReturn = cetus.asciiStrings(searchStrMinLen);
+                    break;
+                case "utf-8":
+                    strSearchReturn = cetus.unicodeStrings(searchStrMinLen);
+                    break;
+                default:
+                    colorError("Got bad string type: " + searchStrType);
+                    break;
+            }
+
+            let strResultsCount = strSearchReturn.count;
+            let strResults = strSearchReturn.results;
+
+            let strSubset = {};
+
+            // We do not want to send too many results or we risk crashing the extension
+            // If there are more than 100 results, only send 100 but send the real count
+            if (strResultsCount > 100) {
+                for (let property in strResults) {
+                    strSubset[property] = strResults[property];
+
+                    if (Object.keys(strSubset).length >= 100) {
+                        break;
+                    }
+                }
+
+                strResults = strSubset;
+            }
+
+            sendExtensionMessage("stringSearchResult", {
+                count: strResultsCount,
+                results: strResults,
+            });
+
+            break;
         case "modifyMemory":
-            const modifyIndex = msgBody.memIndex;
+            const modifyAddr = msgBody.memAddr;
             const modifyValue = msgBody.memValue;
             const modifyMemType = msgBody.memType;
 
-            if (bigintIsNaN(modifyIndex) || bigintIsNaN(modifyValue) || !isValidMemType(modifyMemType)) {
+            if (bigintIsNaN(modifyAddr) || bigintIsNaN(modifyValue) || !isValidMemType(modifyMemType)) {
                 return;
             }
 
-            console.log("Changing "+modifyIndex+" to "+modifyValue+" ("+modifyMemType+")");
+            colorLog("Changing "+modifyAddr+" to "+modifyValue+" ("+modifyMemType+")");
 
-            const memory = cetus.memory(modifyMemType);
-
-            memory[modifyIndex] = modifyValue;
+            cetus.modifyMemory(modifyAddr, modifyValue, modifyMemType);
 
             break;
         case "updateWatch":
@@ -769,7 +903,7 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
                 return;
             }
 
-            console.log("Enabling speedhack at "+shMultiplier+"x");
+            colorLog("Enabling speedhack at "+shMultiplier+"x");
 
             cetus.setSpeedhackMultiplier(shMultiplier);
 

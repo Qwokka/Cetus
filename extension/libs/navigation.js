@@ -17,49 +17,71 @@ limitations under the License.
 // Navigation logic
 const changeTab = function(id) {
     switch (id) {
-        case "tabSearch":
-            document.getElementById('tabOne').style.display = 'block';
-            document.getElementById('tabTwo').style.display = 'none';
-            document.getElementById('tabThree').style.display = 'none';
-            document.getElementById('tabFour').style.display = 'none';
+        case "tabSearchButton":
+            document.getElementById('tabSearch').style.display = 'block';
+            document.getElementById('tabStrings').style.display = 'none';
+            document.getElementById('tabPatch').style.display = 'none';
+            document.getElementById('tabSpeedHack').style.display = 'none';
+            document.getElementById('tabBookmarks').style.display = 'none';
 
             document.getElementById('liTabSearch').className = 'tabs-item is-active';
+            document.getElementById('liTabStrings').className = 'tabs-item';
             document.getElementById('liTabPatch').className = 'tabs-item';
             document.getElementById('liTabSpeedHack').className = 'tabs-item';
             document.getElementById('liTabBookmarks').className = 'tabs-item';
 
             break;
-        case "tabPatch":
-            document.getElementById('tabOne').style.display = 'none';
-            document.getElementById('tabTwo').style.display = 'block';
-            document.getElementById('tabThree').style.display = 'none';
-            document.getElementById('tabFour').style.display = 'none';
+        case "tabStringsButton":
+            document.getElementById('tabSearch').style.display = 'none';
+            document.getElementById('tabStrings').style.display = 'block';
+            document.getElementById('tabPatch').style.display = 'none';
+            document.getElementById('tabSpeedHack').style.display = 'none';
+            document.getElementById('tabBookmarks').style.display = 'none';
 
             document.getElementById('liTabSearch').className = 'tabs-item';
+            document.getElementById('liTabStrings').className = 'tabs-item is-active';
+            document.getElementById('liTabPatch').className = 'tabs-item';
+            document.getElementById('liTabSpeedHack').className = 'tabs-item';
+            document.getElementById('liTabBookmarks').className = 'tabs-item';
+
+            break;
+        case "tabPatchButton":
+            document.getElementById('tabSearch').style.display = 'none';
+            document.getElementById('tabStrings').style.display = 'none';
+            document.getElementById('tabPatch').style.display = 'block';
+            document.getElementById('tabSpeedHack').style.display = 'none';
+            document.getElementById('tabBookmarks').style.display = 'none';
+
+            document.getElementById('liTabSearch').className = 'tabs-item';
+            document.getElementById('liTabStrings').className = 'tabs-item';
             document.getElementById('liTabPatch').className = 'tabs-item is-active';
             document.getElementById('liTabSpeedHack').className = 'tabs-item';
             document.getElementById('liTabBookmarks').className = 'tabs-item';
 
             break;
-        case "tabSpeedHack":
-            document.getElementById('tabOne').style.display = 'none';
-            document.getElementById('tabTwo').style.display = 'none';
-            document.getElementById('tabThree').style.display = 'block';
-            document.getElementById('tabFour').style.display = 'none';
+        case "tabSpeedHackButton":
+            document.getElementById('tabSearch').style.display = 'none';
+            document.getElementById('tabStrings').style.display = 'none';
+            document.getElementById('tabPatch').style.display = 'none';
+            document.getElementById('tabSpeedHack').style.display = 'block';
+            document.getElementById('tabBookmarks').style.display = 'none';
 
             document.getElementById('liTabSearch').className = 'tabs-item';
+            document.getElementById('liTabStrings').className = 'tabs-item';
             document.getElementById('liTabPatch').className = 'tabs-item';
             document.getElementById('liTabSpeedHack').className = 'tabs-item is-active';
             document.getElementById('liTabBookmarks').className = 'tabs-item';
 
             break;
-        case "tabBookmarks":
-            document.getElementById('tabOne').style.display = 'none';
-            document.getElementById('tabTwo').style.display = 'none';
-            document.getElementById('tabThree').style.display = 'none';
-            document.getElementById('tabFour').style.display = 'block';
+        case "tabBookmarksButton":
+            document.getElementById('tabSearch').style.display = 'none';
+            document.getElementById('tabStrings').style.display = 'none';
+            document.getElementById('tabPatch').style.display = 'none';
+            document.getElementById('tabSpeedHack').style.display = 'none';
+            document.getElementById('tabBookmarks').style.display = 'block';
 
             document.getElementById('liTabSearch').className = 'tabs-item';
+            document.getElementById('liTabStrings').className = 'tabs-item';
             document.getElementById('liTabPatch').className = 'tabs-item';
             document.getElementById('liTabSpeedHack').className = 'tabs-item';
             document.getElementById('liTabBookmarks').className = 'tabs-item is-active';

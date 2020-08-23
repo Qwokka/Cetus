@@ -71,16 +71,19 @@
   </div>
   <div class="tabs">
     <div class="tabs-item is-active" id="liTabSearch">
-      <a href="#" name="tabButton" id="tabSearch">Search</a>
+      <a href="#" name="tabButton" id="tabSearchButton">Search</a>
+    </div>
+    <div class="tabs-item" id="liTabStrings">
+      <a href="#" name="tabButton" id="tabStringsButton">Strings</a>
     </div>
     <div class="tabs-item" id="liTabPatch">
-      <a href="#" name="tabButton" id="tabPatch">Patch</a>
+      <a href="#" name="tabButton" id="tabPatchButton">Patch</a>
     </div>
     <div class="tabs-item" id="liTabSpeedHack">
-      <a href="#" name="tabButton" id="tabSpeedHack">Speed Hack</a>
+      <a href="#" name="tabButton" id="tabSpeedHackButton">Speed Hack</a>
     </div>
     <div class="tabs-item" id="liTabBookmarks">
-      <a href="#" name="tabButton" id="tabBookmarks">Bookmarks</a>
+      <a href="#" name="tabButton" id="tabBookmarksButton">Bookmarks</a>
     </div>
     <div class="tabs-item">
       <div class="toggleColorScheme" id="toggleColorScheme">
@@ -90,50 +93,16 @@
       </div>
     </div>
   </div>
-  <div id="tabOne" class="tabs-content">
+  <div id="tabSearch" class="tabs-content">
     <div class="container">
         <form id="searchForm" class="form compare-form">
           <label class="form-field">
-            Value (Empty for Numeric Differential Search)
+            Value (Empty for Differential Search)
             <input type="text" id="searchParam" name="param" value="" class="input" placeholder="Enter value">
           </label>
 
           <div class="form-field">
-            Search type
-            <div class="form-field--group" id="numStrSelector">
-              <div class="radio">
-                <input type="radio" name="numStrSelection" value="num" class="radio-input" checked>
-                <div class="radio-body">
-                  <span></span>
-                  Num
-                </div>
-              </div>
-              <div class="radio">
-                <input type="radio" name="numStrSelection" value="strA" class="radio-input">
-                <div class="radio-body">
-                  <span></span>
-                  StrA
-                </div>
-              </div>
-              <div class="radio">
-                <input type="radio" name="numStrSelection" value="strU" class="radio-input">
-                <div class="radio-body">
-                  <span></span>
-                  StrU
-                </div>
-              </div>
-              <div class="radio">
-                <input type="radio" name="numStrSelection" value="bytes" class="radio-input">
-                <div class="radio-body">
-                  <span></span>
-                  Bytes
-                </div>
-              </div>
-            </div>
-          </div>              
-
-          <div class="form-field">
-            Comparison operator
+            Comparison Operator
             <div class="form-field--group">
               <div class="radio">
                 <input type="radio" name="compare" value="eq" class="radio-input" checked>
@@ -180,7 +149,7 @@
             </div>
           </div>
           <div class="form-field">
-            Value type
+            Value Type
             <div class="form-field--group">
               <div class="radio">
                 <input type="radio" name="type" value="i8" class="radio-input">
@@ -224,6 +193,62 @@
                   f64
                 </div>
               </div>
+              <div class="radio">
+                <input type="radio" name="type" value="ascii" class="radio-input">
+                <div class="radio-body">
+                  <span></span>
+                  ascii
+                </div>
+              </div>
+              <div class="radio">
+                <input type="radio" name="type" value="utf-8" class="radio-input">
+                <div class="radio-body">
+                  <span></span>
+                  utf-8
+                </div>
+              </div>
+              <div class="radio">
+                <input type="radio" name="type" value="bytes" class="radio-input">
+                <div class="radio-body">
+                  <span></span>
+                  bytes
+                </div>
+              </div>
+              <!-- FIXME This is extremely hacky -->
+              <div class="radio">
+              </div>
+              <div class="radio">
+              </div>
+              <div class="radio">
+              </div>
+            </div>
+          </div>
+          <div class="form-field">
+            Only Aligned Addresses? (Faster but less accurate)
+            <div class="form-field--group">
+              <div class="radio">
+                <input type="radio" name="alignment" value="aligned" class="radio-input" checked>
+                <div class="radio-body">
+                  <span></span>
+                  yes
+                </div>
+              </div>
+              <div class="radio">
+                <input type="radio" name="alignment" value="unaligned" class="radio-input">
+                <div class="radio-body">
+                  <span></span>
+                  no
+                </div>
+              </div>
+              <!-- FIXME This is extremely hacky -->
+              <div class="radio">
+              </div>
+              <div class="radio">
+              </div>
+              <div class="radio">
+              </div>
+              <div class="radio">
+              </div>
             </div>
           </div>
           <div class="form-field">
@@ -246,7 +271,61 @@
       <div class="results" id="results"></div>
     </div>
   </div>
-  <div id="tabTwo" style="display:none" class="tabs-content">
+  <div id="tabStrings" style="display: none" class="tabs-content">
+    <div class="container">
+        <form id="stringForm" class="form compare-form">
+          <label class="form-field">
+            Minimum String Length
+            <input type="text" id="strMinLength" name="minLength" value="" class="input" placeholder="4">
+          </label>
+          <div class="form-field">
+            String Type
+            <div class="form-field--group">
+              <div class="radio">
+                <input type="radio" name="stringType" value="ascii" class="radio-input" checked>
+                <div class="radio-body">
+                  <span></span>
+                  ascii
+                </div>
+              </div>
+              <div class="radio">
+                <input type="radio" name="stringType" value="utf-8" class="radio-input">
+                <div class="radio-body">
+                  <span></span>
+                  utf-8
+                </div>
+              </div>
+              <!-- FIXME This is extremely hacky -->
+              <div class="radio">
+              </div>
+              <div class="radio">
+              </div>
+              <div class="radio">
+              </div>
+              <div class="radio">
+              </div>
+            </div>
+          </div>
+          <div class="form-field">
+            Range
+            <div class="form-field--group">
+              <input type="text" id="strSearchLower" name="lower" placeholder="From 0" class="input">
+              <input type="text" id="strSearchUpper" name="upper" placeholder="To 0xFFFFFFFF" class="input">
+            </div>
+          </div>
+          <button type="submit" name="stringSearch" class="input button" value="Submit">Search</button>
+        </form>
+    </div>
+    <div>
+      <div class="container">
+        <div class="restart-container">
+          <div id="strResultsTitle" class="results-count"></div>
+        </div>
+      </div>
+      <div class="results" id="stringResults"></div>
+    </div>
+  </div>
+  <div id="tabPatch" style="display:none" class="tabs-content">
     <div class="container">
       <div>
         <form id="functionFormSearch">
@@ -272,7 +351,7 @@ TODO Rename these classes
     </div>
   </div>
 </div>
-  <div id="tabThree" style="display:none" class="tabs-content">
+  <div id="tabSpeedHack" style="display:none" class="tabs-content">
       <div class="container">
         <div>
           <div class="speedometer">
@@ -392,7 +471,7 @@ TODO Rename these classes
       </div>
     </div>
   </div>
-  <div id="tabFour" style="display:none" class="tabs-content">
+  <div id="tabBookmarks" style="display:none" class="tabs-content">
     <div>
       <div id="bookmarks">
         <div id="bookmark-table"></div>
