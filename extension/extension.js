@@ -310,6 +310,7 @@ const bgMessageListener = function(msgRaw) {
             extension.searchMemType = msgBody.searchForm.valueType;
 
             updateSearchForm(msgBody.searchForm);
+            updateStringSearchForm(msgBody.stringForm);
             updateSpeedhackForm(msgBody.speedhack);
             updateStackTraceTable(msgBody.stackTraces);
 
@@ -330,6 +331,13 @@ const bgMessageListener = function(msgRaw) {
             const bookmarks = msgBody.bookmarks;
 
             updateBookmarkTable(bookmarks);
+
+            break;
+        case "stringSearchResult":
+            const strResultCount = msgBody.count;
+            const strResultObj = msgBody.results;
+
+            updateStringSearchResults(strResultCount, strResultObj);
 
             break;
         case "queryFunctionResult":
