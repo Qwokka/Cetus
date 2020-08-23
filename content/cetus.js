@@ -42,7 +42,7 @@ class Cetus {
         this.speedhack = new SpeedHack(1);
 
         // TODO Move this to extension options page
-        this.debugLevel = 2;
+        this.debugLevel = 0;
 
         if (this.debugLevel >= 1) {
             colorLog("constructor: Cetus initialized");
