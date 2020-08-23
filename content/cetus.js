@@ -612,8 +612,7 @@ class Cetus {
         for (let i = 0; i < memory.length; i++) {
             const thisByte = memory[i];
 
-            // TODO: Optimize this one, avoid conversion every time
-            if (thisByte == bytesSeq[i]) {  
+            if (thisByte == bytesSeq[match]) {
                 match++;
                 continue;
             }
