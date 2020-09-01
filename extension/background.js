@@ -597,14 +597,14 @@ chrome.runtime.onMessage.addListener(function(msgRaw) {
 
             break;
         case "addBookmark":
-            const bookmarkIndex = msgBody.index;
+            const bookmarkAddress = msgBody.address;
             const bookmarkMemType = msgBody.memType;
 
-            if (typeof bookmarkIndex !== "number" || !isValidMemType(bookmarkMemType)) {
+            if (typeof bookmarkAddress !== "number" || !isValidMemType(bookmarkMemType)) {
                 return;
             }
 
-            bgExtension.addBookmark(bookmarkIndex, bookmarkMemType);
+            bgExtension.addBookmark(bookmarkAddress, bookmarkMemType);
 
             break;
         case "stringSearchResult":
