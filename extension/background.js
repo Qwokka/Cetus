@@ -508,8 +508,6 @@ bgExtension = new BackgroundExtension();
 chrome.runtime.onMessage.addListener(function(msgRaw) {
     const msg = bigintJsonParse(msgRaw);
 
-    console.log(msg);
-
     const msgType = msg.type;
     const msgBody = msg.body;
 
