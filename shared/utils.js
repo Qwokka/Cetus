@@ -51,9 +51,9 @@ const sendContentMessage = function(type, msgBody) {
         body: msgBody
     };
 
-    // We do currentWindow: false otherwise messages will fail if sent from an undocked dev tools instance
-    // See issue #16
-	chrome.tabs.query({ currentWindow: false, active: true }, function(tabs) {
+    // We do not query currentWindow because a detached dev tools panel may break
+    // this assumtion. See issue #16
+	chrome.tabs.query({ active: true }, function(tabs) {
 		const activeTab = tabs[0];
         try {
             chrome.tabs.sendMessage(activeTab.id, msg);
