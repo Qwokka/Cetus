@@ -153,6 +153,14 @@ class BackgroundExtension {
                 funcIndex: null,
                 funcBody: "",
             },
+            stringForm: {
+                strType: "ascii",
+                strMinLen: 4,
+                results: {
+                    count: 0,
+                    object: {},
+                }
+            },
             speedhack: {
                 multiplier: null,
             },
