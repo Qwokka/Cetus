@@ -51,7 +51,9 @@ const sendContentMessage = function(type, msgBody) {
         body: msgBody
     };
 
-	chrome.tabs.query({ currentWindow: true, active: true }, function(tabs) {
+    // We do currentWindow: false otherwise messages will fail if sent from an undocked dev tools instance
+    // See issue #16
+	chrome.tabs.query({ currentWindow: false, active: true }, function(tabs) {
 		const activeTab = tabs[0];
         try {
             chrome.tabs.sendMessage(activeTab.id, msg);
@@ -157,7 +159,7 @@ const realAddressToIndex = function(memAddr, memType) {
     return Math.floor(memAddr / memSize);
 };
 
-// Converts a value to its float32 representation so it can more easily
+// Converts a value to its i32 representation so it can more easily
 // be handled from within WASM.
 const convertToI32 = function(value, type) {
     switch (type) {
