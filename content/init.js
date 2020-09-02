@@ -178,6 +178,43 @@ const instrumentBinary = function(bufferSource) {
     wail.addCodeEntry(funcEntryWriteWatchpoint8Bit, {
         locals: [],
         code: [
+            // We have already checked that globalWatchAddr != 0 (See
+            // writeWatchpointInstrCallback) so we start by making sure the
+            // value of our watched address has changed
+            OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+            OP_I64_LOAD8_U, VarUint32(0x00), VarUint32(0x00),
+            OP_GET_GLOBAL, globalWatchVal.varUint32(),
+            OP_I64_NE,
+            OP_IF, 0x40,
+                // If our watched value has changed since we last looked,
+                // we check which flags are set for our watchpoint
+                OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                OP_I32_CONST, VarUint32(0x01),
+                OP_I32_AND,
+                OP_IF, 0x40,
+                    // WRITE flag is set, trigger imported callback
+                    OP_CALL, importWriteWatchFunc.varUint32(),
+                    OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                    OP_I32_CONST, VarUint32(0x04),
+                    OP_I32_AND,
+                    OP_I32_CONST, VarUint32(0x00),
+                    OP_I32_EQ,
+                    OP_IF, 0x40,
+                        OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                        OP_I64_LOAD8_U, VarUint32(0x00), VarUint32(0x00),
+                        OP_SET_GLOBAL, globalWatchVal.varUint32(),
+                    OP_END,
+                OP_END,
+                OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                OP_I32_CONST, VarUint32(0x04),
+                OP_I32_AND,
+                OP_IF, 0x40,
+                    // FREEZE flag is set, revert the value
+                    OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                    OP_GET_GLOBAL, globalWatchVal.varUint32(),
+                    OP_I64_STORE8, VarUint32(0x00), VarUint32(0x00),
+                OP_END,
+            OP_END,
             OP_RETURN,
             OP_END,
         ]
@@ -185,6 +222,43 @@ const instrumentBinary = function(bufferSource) {
     wail.addCodeEntry(funcEntryWriteWatchpoint16Bit, {
         locals: [],
         code: [
+            // We have already checked that globalWatchAddr != 0 (See
+            // writeWatchpointInstrCallback) so we start by making sure the
+            // value of our watched address has changed
+            OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+            OP_I64_LOAD16_U, VarUint32(0x00), VarUint32(0x00),
+            OP_GET_GLOBAL, globalWatchVal.varUint32(),
+            OP_I64_NE,
+            OP_IF, 0x40,
+                // If our watched value has changed since we last looked,
+                // we check which flags are set for our watchpoint
+                OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                OP_I32_CONST, VarUint32(0x01),
+                OP_I32_AND,
+                OP_IF, 0x40,
+                    // WRITE flag is set, trigger imported callback
+                    OP_CALL, importWriteWatchFunc.varUint32(),
+                    OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                    OP_I32_CONST, VarUint32(0x04),
+                    OP_I32_AND,
+                    OP_I32_CONST, VarUint32(0x00),
+                    OP_I32_EQ,
+                    OP_IF, 0x40,
+                        OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                        OP_I64_LOAD16_U, VarUint32(0x00), VarUint32(0x00),
+                        OP_SET_GLOBAL, globalWatchVal.varUint32(),
+                    OP_END,
+                OP_END,
+                OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                OP_I32_CONST, VarUint32(0x04),
+                OP_I32_AND,
+                OP_IF, 0x40,
+                    // FREEZE flag is set, revert the value
+                    OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                    OP_GET_GLOBAL, globalWatchVal.varUint32(),
+                    OP_I64_STORE16, VarUint32(0x00), VarUint32(0x00),
+                OP_END,
+            OP_END,
             OP_RETURN,
             OP_END,
         ]
