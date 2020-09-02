@@ -159,24 +159,44 @@ const realAddressToIndex = function(memAddr, memType) {
     return Math.floor(memAddr / memSize);
 };
 
-// Converts a value to its i32 representation so it can more easily
-// be handled from within WASM.
-const convertToI32 = function(value, type) {
+// Converts a value to its i64 representation so it can more easily
+// be handled from within WASM
+const convertToI64 = function(value, type) {
+    let i32Array;
+
+    const result = {
+        lower: 0,
+        upper: 0
+    };
+
     switch (type) {
         case "i8":
         case "i16":
         case "i32":
-            return value;
+            result.lower = value;
+
+            break;
         case "f32":
             const floatArray = new Float32Array([value]);
-            const i32Array = new Uint32Array(floatArray.buffer);
+            i32Array = new Uint32Array(floatArray.buffer);
 
-            return i32Array[0];
+            result.lower = i32Array[0];
+
+            break;
         case "i64":
         case "f64":
+            const float64Array = new Float64Array([value]);
+            i32Array = new Uint32Array(float64Array.buffer);
+
+            result.lower = i32Array[0];
+            result.upper = i32Array[1];
+
+            break;
         default:
-            throw new Error("Conversion " + type + " not implemented in convertToI32()");
+            throw new Error("Conversion " + type + " not implemented in convertToI64()");
     }
+
+    return result;
 };
 
 // https://stackoverflow.com/questions/3665115/how-to-create-a-file-in-memory-for-user-to-download-but-not-through-server

@@ -861,15 +861,19 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
         case "updateWatch":
             const watchIndex = msgBody.index;
             const watchAddr = msgBody.addr;
-            const watchValue = msgBody.value;
             const watchSize = msgBody.size;
             const watchFlags = msgBody.flags;
 
+            const watchValue = msgBody.value;
+
             if (bigintIsNaN(watchIndex) ||
                 bigintIsNaN(watchAddr) ||
-                bigintIsNaN(watchValue) ||
                 bigintIsNaN(watchSize) ||
                 bigintIsNaN(watchFlags)) {
+                return;
+            }
+
+            if (typeof watchValue.lower === "undefined" || typeof watchValue.upper === "undefined") {
                 return;
             }
 
@@ -877,7 +881,7 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
                 return;
             }
 
-            cetus.watchpointExports[watchIndex](watchAddr, watchValue, watchSize, watchFlags);
+            cetus.watchpointExports[watchIndex](watchAddr, watchValue.lower, watchValue.upper, watchSize, watchFlags);
 
             break;
         case "queryFunction":

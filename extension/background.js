@@ -226,7 +226,7 @@ class BackgroundExtension {
 
         const watchSize = getElementSize(memType);
 
-        const realValue = convertToI32(watchValue, memType);
+        const realValue = convertToI64(watchValue, memType);
 
         // First we check if a watchpoint already exists at this address
         let matchIndex = null;
@@ -274,7 +274,7 @@ class BackgroundExtension {
 
                 const memType = bookmark.memType;
 
-                const realValue = convertToI32(bookmark.value, memType);
+                const realValue = convertToI64(bookmark.value, memType);
                 const watchSize = getElementSize(memType);
 
                 msgBody.index = i;
