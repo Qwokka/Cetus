@@ -86,6 +86,8 @@ class PopupExtension {
 
         const overlay = document.getElementById("lockOverlay");
         overlay.classList.add("overlay");
+        const button = document.getElementById("overlayLoadPatchModalButton");
+        button.style.display = "block";
 
         closeLoadPatchModal();
         closeSavePatchModal();
