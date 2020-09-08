@@ -336,6 +336,18 @@ const Assembler = class {
                 break;
             case "br_table":
                 this._output.copyBuffer([ OP_BR_TABLE ]);
+
+                let targetCount = lineReader.readInteger();
+
+                this._output.copyBuffer(VarUint32ToArray(targetCount));
+
+                for (let i = 0; i < targetCount; i++) {
+                    let tableEntry = lineReader.readInteger();
+                    this._output.copyBuffer(VarUint32ToArray(tableEntry));
+                }
+
+                let defaultTarget = lineReader.readInteger();
+                this._output.copyBuffer(VarUint32ToArray(defaultTarget));
                 break;
             case "return":
                 this._output.copyBuffer([ OP_RETURN ]);

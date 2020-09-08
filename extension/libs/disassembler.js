@@ -74,7 +74,7 @@ const Disassembler = class {
         this.symbols = symbols;
     }
 
-    disassemble(bytes) {
+    disassemble() {
         const instructions = [];
         const outputLines = [];
 
@@ -724,7 +724,7 @@ const Disassembler = class {
                 instruction.opstring = "f64.reinterpret/i64";
                 break;
             default:
-                throw "Invalid/unknown opcode " + opcode;
+                throw "Invalid/unknown opcode " + instruction.opcode;
         }
 
         return instruction;
