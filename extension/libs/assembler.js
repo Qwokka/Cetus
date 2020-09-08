@@ -77,25 +77,35 @@ const TextReader = class {
     readLine() {
         let result = "";
 
-        let newChar;
-
         while (1) {
-            try {
-                newChar = this.readChar();
+            let newChar;
+
+            while (1) {
+                try {
+                    newChar = this.readChar();
+                }
+                catch(err) {
+                    this.eof = true;
+                    break;
+                }
+
+                if (this.matchLineSeparator(newChar)) {
+                    break;
+                }
+
+                result += newChar;
             }
-            catch(err) {
-                this.eof = true;
+
+            result = result.trim();
+
+            if (!result.startsWith("//")) {
                 break;
             }
 
-            if (this.matchLineSeparator(newChar)) {
-                break;
-            }
-
-            result += newChar;
+            result = "";
         }
 
-        return result.trim();
+        return result;
     }
 
     readString() {
