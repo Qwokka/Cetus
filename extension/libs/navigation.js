@@ -88,7 +88,7 @@ const changeTab = function(id) {
 
             break;
         default:
-            throw new Error("Bad tab ID ");
+            throw new Error("Bad tab ID " + id);
     }
 };
 
