@@ -360,7 +360,7 @@ const bgMessageListener = function(msgRaw) {
 
             updatePatchWindow(funcIndex, funcText, realLineNum);
 
-            changeTab("tabPatch");
+            changeTab("tabPatchButton");
 
             break;
         case "watchPointHit":
