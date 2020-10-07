@@ -665,8 +665,6 @@ const stacktraceCallback = function(stackFrames) {
 
     let watchPointsFound = 0;
 
-    console.log(stackFrames);
-
     // We want to provide the user with a clean stack trace that doesn't include
     // functions that we've injected. To do that, we remove all "chrome-extension://"
     // entries and the most recent "wasm-function" (Since that is our watchpoint function)
