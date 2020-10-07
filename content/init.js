@@ -663,7 +663,9 @@ const writeWatchCallback = function() {
 const stacktraceCallback = function(stackFrames) {
     const trimmedStackFrame = [];
 
-    let watchPointFound = false;
+    let watchPointsFound = 0;
+
+    console.log(stackFrames);
 
     // We want to provide the user with a clean stack trace that doesn't include
     // functions that we've injected. To do that, we remove all "chrome-extension://"
@@ -697,8 +699,8 @@ const stacktraceCallback = function(stackFrames) {
         newFrame.fileName = fileName;
         newFrame.lineNumber = lineNumber;
 
-        if (!watchPointFound) {
-            watchPointFound = true;
+        if (watchPointsFound < 2) {
+            watchPointsFound++;
             continue;
         }
 
