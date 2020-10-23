@@ -348,7 +348,7 @@ const Disassembler = class {
 
                 const f64Bytes = this.reader.readBytes(8);
 
-                const f64ByteBuffer = new Uint8Array(f32Bytes);
+                const f64ByteBuffer = new Uint8Array(f64Bytes);
 
                 const f64Array = new Float64Array(f64ByteBuffer.buffer);
 
