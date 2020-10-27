@@ -811,6 +811,12 @@ const webAssemblyInstantiateStreamingHook = function(sourceObj, importObject) {
     // sections of the binary. But for now this is pretty reliable
     let memoryObj = null;
 
+    // Some older versions of emscripten use importObject.a instead of importObject.env.
+    // Simply link importObject.a to importObject.env if importObject.a exists
+    if (typeof importObject.a !== "undefined" && typeof importObject.env === "undefined") {
+        importObject.env = importObject.a;
+    }
+
     // Emscripten by default stores most of the environment in importObject.env
     // If it doesn't exist already let's create it so we have a place to put 
     // our imported functions
