@@ -219,6 +219,7 @@ const instrumentBinary = function(bufferSource) {
             OP_END,
         ]
     });
+
     wail.addCodeEntry(funcEntryWriteWatchpoint16Bit, {
         locals: [],
         code: [
@@ -612,7 +613,22 @@ const instrumentBinary = function(bufferSource) {
 
     wail.addInstructionParser(OP_ATOMIC, atomicInstrCallback);
 
-    // patchOptions will be set early on in page load if there are any configured patches
+    let memoryInstancePath = {};
+
+    // We use this callback to retrieve the path to the memory object
+    // If multiple memory objects are supported in the future, this will need to change
+    const importInstrCallback = function(parameters) {
+        if (parameters.kind == KIND_MEMORY) {
+            const decoder = new TextDecoder();
+
+            memoryInstancePath.module = decoder.decode(parameters.module);
+            memoryInstancePath.field = decoder.decode(parameters.field);
+        }
+    }
+
+    wail.addImportElementParser(null, importInstrCallback);
+
+    // cetusPatches will be set early on in page load if there are any configured patches
     // for this binary
     if (typeof cetusPatches === "object") {
         for (let i = 0; i < cetusPatches.length; i++) {
@@ -646,6 +662,7 @@ const instrumentBinary = function(bufferSource) {
     symObj[configWpIndex.i32()] = "_wp_config";
 
     resultObj.symbols = symObj;
+    resultObj.memory = memoryInstancePath;
 
     return resultObj;
 };
@@ -722,7 +739,16 @@ const webAssemblyInstantiateHook = function(bufferSource, importObject) {
     const instrumentedBuffer = instrumentResults.buffer;
     const instrumentedSymbols = instrumentResults.symbols;
 
-    const importMemory = importObject.env.memory;
+    const memoryModule = instrumentResults.memory.module;
+    const memoryField = instrumentResults.memory.field;
+    const memoryInstance = importObject[memoryModule][memoryField];
+
+    // Emscripten by default stores most of the environment in importObject.env
+    // If it doesn't exist already let's create it so we have a place to put 
+    // our imported functions
+    if (typeof importObject.env !== "object") {
+        importObject.env = {};
+    }
 
     importObject.env.readWatchCallback = readWatchCallback;
     importObject.env.writeWatchCallback = writeWatchCallback;
@@ -730,7 +756,7 @@ const webAssemblyInstantiateHook = function(bufferSource, importObject) {
     return new Promise(function(resolve, reject) {
         oldWebAssemblyInstantiate(instrumentedBuffer, importObject).then(function(instanceObject) {
             cetus = new Cetus({
-                memory: importMemory,
+                memory: memoryInstance,
                 watchpointExports: [instanceObject.instance.exports.addWatch],
                 buffer: instrumentedBuffer,
                 symbols: instrumentedSymbols
@@ -755,10 +781,20 @@ const webAssemblyModuleHook = function(bufferSource) {
 
     const instrumentedBuffer = instrumentResults.buffer;
     const instrumentedSymbols = instrumentResults.symbols;
-    const memoryObj = instrumentResults.memory;
+
+    const memoryModule = instrumentResults.memory.module;
+    const memoryField = instrumentResults.memory.field;
+    const memoryInstance = importObject[memoryModule][memoryField];
+
+    // Emscripten by default stores most of the environment in importObject.env
+    // If it doesn't exist already let's create it so we have a place to put 
+    // our imported functions
+    if (typeof importObject.env !== "object") {
+        importObject.env = {};
+    }
 
     cetus = new Cetus({
-        memory: memoryObj,
+        memory: memoryInstance,
         watchpointExports: [instanceObject.instance.exports.addWatch],
         buffer: instrumentedBuffer,
         symbols: instrumentedSymbols
@@ -778,12 +814,15 @@ const webAssemblyInstanceHook = function(module, importObject) {
 
     const instrumentedBuffer = instrumentResults.buffer;
     const instrumentedSymbols = instrumentResults.symbols;
-    const memoryObj = instrumentResults.memory;
+
+    const memoryModule = instrumentResults.memory.module;
+    const memoryField = instrumentResults.memory.field;
+    const memoryInstance = importObject[memoryModule][memoryField];
 
     // Emscripten by default stores most of the environment in importObject.env
     // If it doesn't exist already let's create it so we have a place to put 
     // our imported functions
-    if (!"env" in importObject) {
+    if (typeof importObject.env !== "object") {
         importObject.env = {};
     }
 
@@ -791,7 +830,7 @@ const webAssemblyInstanceHook = function(module, importObject) {
     importObject.env.writeWatchCallback = writeWatchCallback;
 
     cetus = new Cetus({
-        memory: memoryObj,
+        memory: memoryInstance,
         watchpointExports: [instanceObject.instance.exports.addWatch],
         buffer: instrumentedBuffer,
         symbols: instrumentedSymbols
