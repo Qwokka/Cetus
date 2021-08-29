@@ -212,7 +212,7 @@ class BackgroundExtension {
     updateMemView() {
         const msgBody = {
             data: this.popupData.memoryViewer.memData,
-			startAddress: this.popupData.memoryViewer.startAddress
+            startAddress: this.popupData.memoryViewer.startAddress
         };
 
         this.sendPopupMessage("updateMemView", msgBody);
