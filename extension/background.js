@@ -571,7 +571,6 @@ chrome.runtime.onMessage.addListener(function(msgRaw) {
             const bytesValue = msgBody.value;
 
             bgExtension.popupData.memoryViewer.memData = bytesValue;
-            bgExtension.popupData.memoryViewer.startAddress = bytesAddress;
             bgExtension.updateMemView();
 
             break;
