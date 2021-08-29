@@ -14,6 +14,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+document.getElementById('memViewPrevPage').onclick = function(e) {
+	let currentAddress = parseInt(document.getElementById("memViewStartAddress").value);
+	let newAddress = currentAddress - 0x200;
+	if (newAddress < 0) newAddress = 0;
+	document.getElementById("memViewStartAddress").value = toHex(newAddress);
+
+	enableMemView(newAddress);
+};
+
+document.getElementById('memViewNextPage').onclick = function(e) {
+	let currentAddress = parseInt(document.getElementById("memViewStartAddress").value);
+	let newAddress = currentAddress + 0x200;
+	if (newAddress > 0xFFFFFFFF) newAddress = 0xFFFFFFFF;
+	document.getElementById("memViewStartAddress").value = toHex(newAddress);
+	
+	enableMemView(newAddress);
+};
+
 document.getElementById('restartBtn').onclick = function(e) {
 	e.preventDefault();
 
@@ -1267,6 +1285,39 @@ const updateSpeedhackGauge = function() {
 };
 
 document.getElementById('shRange').oninput = updateSpeedhackGauge;
+
+const enableMemView = function(address) {
+	document.getElementById("toggleMemView").setAttribute("enabled", "true");
+	document.getElementById("toggleMemView").innerHTML = "Disable";
+
+	extension.sendBGMessage("memToggle", {
+		enabled: 1,
+		startAddress: address,
+	});
+};
+
+const disableMemView = function(address) {
+	document.getElementById("toggleMemView").setAttribute("enabled", "false");
+	document.getElementById("toggleMemView").innerHTML = "Enable";
+
+	extension.sendBGMessage("memToggle", {
+		enabled: 0,
+		startAddress: address,
+	});
+};
+document.getElementById('toggleMemView').onclick = function(e) {
+    e.preventDefault();
+
+    const buttonEnabled = event.currentTarget.getAttribute("enabled") == "true";
+    const memViewStartAddress = parseInt(document.getElementById("memViewStartAddress").value);
+
+    if (buttonEnabled) {
+		disableMemView(memViewStartAddress);
+    }
+    else {
+		enableMemView(memViewStartAddress);
+    }
+};
 
 document.getElementById('toggleSpeedhack').onclick = function(e) {
     e.preventDefault();

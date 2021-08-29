@@ -885,6 +885,10 @@ const webAssemblyInstantiateStreamingHook = function(sourceObj, importObject) {
                     memoryObj = instanceObject.instance.exports.memory;
                 }
 
+                if (memoryObj == null) {
+                    memoryObj = instanceObject.instance.exports.Ed;
+                }
+
                 cetus = new Cetus({
                     memory: memoryObj,
                     watchpointExports: [instanceObject.instance.exports.addWatch],

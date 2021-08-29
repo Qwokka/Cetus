@@ -104,6 +104,20 @@ class Cetus {
         return new memType(tempBuf.buffer)[0];
     }
 
+    queryMemoryChunk(address, length) {
+        const memory = this.unalignedMemory();
+        const memType = Uint8Array;
+        const memSize = 1;
+
+        const tempBuf = new Uint8Array(length);
+
+        for (let i = 0; i < length; i++) {
+            tempBuf[i] = memory[address + i];
+        }
+
+        return new Uint8Array(tempBuf.buffer);
+    }
+
     // These two functions should typically only be used by the internal search
     // They use pre-loaded values to speed up the process of doing repetitive searches
     _queryMemoryUnalignedQuick(address) {
@@ -729,6 +743,15 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
     }
 
     switch (msgType) {
+        case "queryMemoryBytes":
+            const queryBytesResult = cetus.queryMemoryChunk(msgBody.address, 512);
+
+            sendExtensionMessage("queryMemoryBytesResult", {
+                address: msgBody.address,
+                value: queryBytesResult,
+            });
+
+            break;
         case "queryMemory":
             const queryAddr = msgBody.address;
             const queryMemType = msgBody.memType;

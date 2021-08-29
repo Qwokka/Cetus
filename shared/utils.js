@@ -18,6 +18,10 @@ const toHex = function(i) {
 	return '0x' + parseInt(i).toString(16).padStart(8, '0');
 };
 
+const toHexByte = function(i) {
+	return parseInt(i).toString(16).padStart(2, '0');
+};
+
 // This function controls how values are displayed to the user
 // This could be improved, but as is all integers > 0x1000 are
 // displayed as hex
@@ -30,6 +34,8 @@ const formatValue = function(value, memType) {
             return formatInteger(value);
         case "f32":
         case "f64":
+            return value;
+        case "ascii":
             return value;
         default:
             throw new Error("Invalid memory type " + type + " in formatValue()");

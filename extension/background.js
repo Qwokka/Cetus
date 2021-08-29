@@ -68,6 +68,11 @@ class BackgroundExtension {
                 enabled: false,
                 multiplier: 2,
             },
+			memoryViewer: {
+				enabled: false,
+				startAddress: 0x00000000,
+				memData: {},
+			},
             // FIXME This isn't used, but we should update the current tab for the popup view
             currentTab: "tabSearch",
         };
@@ -164,6 +169,11 @@ class BackgroundExtension {
             speedhack: {
                 multiplier: null,
             },
+			memoryViewer: {
+				enabled: false,
+				startAddress: 0x00000000,
+				memData: {}
+			},
             currentTab: "tabSearch",
         };
 
@@ -197,6 +207,15 @@ class BackgroundExtension {
         };
 
         this.sendPopupMessage("updateBookmarks", msgBody);
+    }
+
+    updateMemView() {
+        const msgBody = {
+            data: this.popupData.memoryViewer.memData,
+			startAddress: this.popupData.memoryViewer.startAddress
+        };
+
+        this.sendPopupMessage("updateMemView", msgBody);
     }
 
     // Updates the flags of a watchpoint if one already exists for this address
@@ -494,6 +513,11 @@ const popupMessageListener = function(msg) {
             }
 
             break;
+		case "memToggle":
+            bgExtension.popupData.memoryViewer.enabled = msgBody.enabled;
+            bgExtension.popupData.memoryViewer.startAddress = msgBody.startAddress;
+
+			break;
     }
 };
 
@@ -542,6 +566,14 @@ chrome.runtime.onMessage.addListener(function(msgRaw) {
             });
 
             break;
+		case "queryMemoryBytesResult":
+            const bytesAddress = msgBody.address;
+            const bytesValue = msgBody.value;
+
+            bgExtension.popupData.memoryViewer.memData = bytesValue;
+            bgExtension.popupData.memoryViewer.startAddress = bytesAddress;
+			bgExtension.updateMemView();
+			break;
         case "queryMemoryResult":
             const address = msgBody.address;
             const value = msgBody.value;
@@ -743,3 +775,10 @@ setInterval(function() {
     }
 }, 1000);
 
+setInterval(function() {
+	if (bgExtension.popupData.memoryViewer.enabled) {
+		sendContentMessage("queryMemoryBytes", {
+			address: bgExtension.popupData.memoryViewer.startAddress,
+		});
+	}
+}, 250);

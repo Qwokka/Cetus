@@ -85,6 +85,9 @@
     <div class="tabs-item" id="liTabBookmarks">
       <a href="#" name="tabButton" id="tabBookmarksButton">Bookmarks</a>
     </div>
+    <div class="tabs-item" id="liTabMemView">
+      <a href="#" name="tabButton" id="tabMemViewButton">Memory View</a>
+    </div>
     <div class="tabs-item">
       <div class="toggleColorScheme" id="toggleColorScheme">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -489,6 +492,17 @@ TODO Rename these classes
       <div id="stack-traces" class="message-body">
       </div>
     </div>
+  </div>
+  <div id="tabMemView" style="display:none" class="tabs-content">
+  <label class="form-field--group">
+	Address
+	  <input type="text" id="memViewStartAddress" name="memViewStartAddress" value="0x00000000" class="input" placeholder="0x00000000">
+	  <div class="button" style="flex: 0;" id="memViewPrevPage">&#60;</div>
+	  <div class="button" style="flex: 0;" id="memViewNextPage">&#62;</div>
+  </label>
+
+   <div id="toggleMemView" class="button" enabled="false">Enable</div>
+   <textarea id="memViewData" style="font-family: monospace; font-size: 11px; width: 700px; height: 600px;"></textarea>
   </div>
 </body>
 <script src="/shared/wail.min.js/wail.min.js"></script>
