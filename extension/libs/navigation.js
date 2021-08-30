@@ -23,12 +23,14 @@ const changeTab = function(id) {
             document.getElementById('tabPatch').style.display = 'none';
             document.getElementById('tabSpeedHack').style.display = 'none';
             document.getElementById('tabBookmarks').style.display = 'none';
+            document.getElementById('tabMemView').style.display = 'none';
 
             document.getElementById('liTabSearch').className = 'tabs-item is-active';
             document.getElementById('liTabStrings').className = 'tabs-item';
             document.getElementById('liTabPatch').className = 'tabs-item';
             document.getElementById('liTabSpeedHack').className = 'tabs-item';
             document.getElementById('liTabBookmarks').className = 'tabs-item';
+            document.getElementById('liTabMemView').className = 'tabs-item';
 
             break;
         case "tabStringsButton":
@@ -37,12 +39,14 @@ const changeTab = function(id) {
             document.getElementById('tabPatch').style.display = 'none';
             document.getElementById('tabSpeedHack').style.display = 'none';
             document.getElementById('tabBookmarks').style.display = 'none';
+            document.getElementById('tabMemView').style.display = 'none';
 
             document.getElementById('liTabSearch').className = 'tabs-item';
             document.getElementById('liTabStrings').className = 'tabs-item is-active';
             document.getElementById('liTabPatch').className = 'tabs-item';
             document.getElementById('liTabSpeedHack').className = 'tabs-item';
             document.getElementById('liTabBookmarks').className = 'tabs-item';
+            document.getElementById('liTabMemView').className = 'tabs-item';
 
             break;
         case "tabPatchButton":
@@ -51,12 +55,14 @@ const changeTab = function(id) {
             document.getElementById('tabPatch').style.display = 'block';
             document.getElementById('tabSpeedHack').style.display = 'none';
             document.getElementById('tabBookmarks').style.display = 'none';
+            document.getElementById('tabMemView').style.display = 'none';
 
             document.getElementById('liTabSearch').className = 'tabs-item';
             document.getElementById('liTabStrings').className = 'tabs-item';
             document.getElementById('liTabPatch').className = 'tabs-item is-active';
             document.getElementById('liTabSpeedHack').className = 'tabs-item';
             document.getElementById('liTabBookmarks').className = 'tabs-item';
+            document.getElementById('liTabMemView').className = 'tabs-item';
 
             break;
         case "tabSpeedHackButton":
@@ -65,12 +71,14 @@ const changeTab = function(id) {
             document.getElementById('tabPatch').style.display = 'none';
             document.getElementById('tabSpeedHack').style.display = 'block';
             document.getElementById('tabBookmarks').style.display = 'none';
+            document.getElementById('tabMemView').style.display = 'none';
 
             document.getElementById('liTabSearch').className = 'tabs-item';
             document.getElementById('liTabStrings').className = 'tabs-item';
             document.getElementById('liTabPatch').className = 'tabs-item';
             document.getElementById('liTabSpeedHack').className = 'tabs-item is-active';
             document.getElementById('liTabBookmarks').className = 'tabs-item';
+            document.getElementById('liTabMemView').className = 'tabs-item';
 
             break;
         case "tabBookmarksButton":
@@ -79,12 +87,30 @@ const changeTab = function(id) {
             document.getElementById('tabPatch').style.display = 'none';
             document.getElementById('tabSpeedHack').style.display = 'none';
             document.getElementById('tabBookmarks').style.display = 'block';
+            document.getElementById('tabMemView').style.display = 'none';
 
             document.getElementById('liTabSearch').className = 'tabs-item';
             document.getElementById('liTabStrings').className = 'tabs-item';
             document.getElementById('liTabPatch').className = 'tabs-item';
             document.getElementById('liTabSpeedHack').className = 'tabs-item';
             document.getElementById('liTabBookmarks').className = 'tabs-item is-active';
+            document.getElementById('liTabMemView').className = 'tabs-item';
+
+            break;
+        case "tabMemViewButton":
+            document.getElementById('tabSearch').style.display = 'none';
+            document.getElementById('tabStrings').style.display = 'none';
+            document.getElementById('tabPatch').style.display = 'none';
+            document.getElementById('tabSpeedHack').style.display = 'none';
+            document.getElementById('tabBookmarks').style.display = 'none';
+            document.getElementById('tabMemView').style.display = 'block';
+
+            document.getElementById('liTabSearch').className = 'tabs-item';
+            document.getElementById('liTabStrings').className = 'tabs-item';
+            document.getElementById('liTabPatch').className = 'tabs-item';
+            document.getElementById('liTabSpeedHack').className = 'tabs-item';
+            document.getElementById('liTabBookmarks').className = 'tabs-item';
+            document.getElementById('liTabMemView').className = 'tabs-item is-active';
 
             break;
         default:

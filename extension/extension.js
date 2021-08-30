@@ -335,6 +335,36 @@ const bgMessageListener = function(msgRaw) {
             updateBookmarkTable(bookmarks);
 
             break;
+        case "updateMemView":
+            const memData = msgBody.data;
+            const memDataStartAddress = msgBody.startAddress;
+			
+            let len = Object.keys(memData).length;
+            document.getElementById("memViewData").value = "";
+
+            let counter = 0;
+            let row = "";
+            let txt = "";
+            let c = 0;
+            for (let i=0; i<32; i++)
+            {
+                row += toHex(memDataStartAddress+16*i) + " ";
+                txt = "";
+                for (let k=0; k<16; k++)
+                {
+                    row += toHexByte(memData[c]) + " ";
+                    if (memData[c] > 32 && memData[c] < 127)
+                        txt += String.fromCharCode(memData[c]);
+                    else
+                        txt += ".";
+
+                    c++;
+                }
+                row += " " + txt + "\n";
+            }
+            document.getElementById("memViewData").value = row;
+		
+            break;
         case "stringSearchResult":
             const strResultCount = msgBody.count;
             const strResultObj = msgBody.results;
