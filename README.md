@@ -53,6 +53,10 @@ Download the latest release or:
 
 [wasm-cheat-engine](https://github.com/vakzz/wasm-cheat-engine): Inspiration, a little bit of derivative code
 
+### Notable Contributors
+
+@nailgg (Real-Time Memory Viewer)
+
 ## License
 
 Cetus is licensed under [Apache License 2.0](/LICENSE)
