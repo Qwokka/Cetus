@@ -53,7 +53,7 @@ Download the latest release or:
 
 [wasm-cheat-engine](https://github.com/vakzz/wasm-cheat-engine): Inspiration, a little bit of derivative code
 
-### Notable Contributors
+### Major Contributors
 
 @nailgg (Real-Time Memory Viewer)
 
