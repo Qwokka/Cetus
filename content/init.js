@@ -846,6 +846,10 @@ const oldWebAssemblyInstantiateStreaming = WebAssembly.instantiateStreaming;
 const webAssemblyInstantiateStreamingHook = function(sourceObj, importObject) {
     colorLog("WebAssembly.instantiateStreaming() intercepted");
 
+    if (typeof importObject === "undefined") {
+        importObject = {};
+    }
+
     // TODO In the future we should retrieve the memory object by parsing the IMPORT/EXPORT
     // sections of the binary. But for now this is pretty reliable
     let memoryObj = null;
