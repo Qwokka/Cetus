@@ -657,14 +657,26 @@ class SpeedHack {
     constructor(multiplier) {
         this.multiplier = multiplier;
 
-        this.oldDn = Date.now;
-        this.oldPn = performance.now;
+        // Just in case we get injected twice, we need to make sure we don't overwrite
+        // the old saved functions
+        if (Date.now !== speedHackDateNow) {
+            this.oldDn = Date.now;
+            Date.now = speedHackDateNow;
+        }
+        else {
+            this.oldDn = cetus.speedhack.oldDn;
+        }
+
+        if (performance.now !== speedHackPerformanceNow) {
+            this.oldPn = performance.now;
+            performance.now = speedHackPerformanceNow;
+        }
+        else {
+            this.oldPn = cetus.speedhack.oldPn;
+        }
 
         this.startDn = this.oldDn.call(Date);
         this.startPn = this.oldPn.call(performance);
-
-        Date.now = speedHackDateNow;
-        performance.now = speedHackPerformanceNow;
     }
 }
 
