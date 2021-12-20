@@ -1,36 +1,37 @@
 {
-	"name": "Cetus",
-	"version": "1.0",
-	"description": "Dynamic analysis extension for WASM",
-	"manifest_version": 2,
-	"content_scripts": [
-		{
-			"js": ["content/content.js"],
-			"matches": ["<all_urls>"],
-			"all_frames": true,
-			"run_at": "document_start"
-		}
-	],
-	"permissions": ["activeTab", "storage"],
-	"web_accessible_resources": [
+    "name": "Cetus",
+    "version": "1.03beta",
+    "description": "Dynamic analysis extension for WASM",
+    "manifest_version": 2,
+    "content_scripts": [
+        {
+            "js": ["content/content.js"],
+            "matches": ["<all_urls>"],
+            "all_frames": true,
+            "run_at": "document_start"
+        }
+    ],
+    "permissions": ["activeTab", "storage"],
+    "content_security_policy": "default-src 'self'; style-src 'unsafe-inline';",
+    "web_accessible_resources": [
         "content/cetus.js",
         "content/init.js",
         "shared/wail.min.js/wail.min.js",
         "shared/utils.js",
         "content/thirdparty/stacktrace/stacktrace.min.js"
     ],
-	"browser_action": {
-		"default_title": "Cetus",
-		"default_popup": "extension/popupview.html"
-	},
-	"devtools_page": "extension/devtools.html",
-	"background": {
-		"page": "extension/background.html",
-		"persistent": true
-	},
-	"icons": {
-		"16": "icons/cetus16.png",
-		"48": "icons/cetus48.png",
-		"128": "icons/cetus128.png"
-	}
+    "browser_action": {
+        "default_title": "Cetus",
+        "default_popup": "extension/popupview.html"
+    },
+    "devtools_page": "extension/devtools.html",
+    "background": {
+        "page": "extension/background.html",
+        "persistent": true
+    },
+    "icons": {
+        "16": "icons/cetus16.png",
+        "48": "icons/cetus48.png",
+        "128": "icons/cetus128.png"
+    }
 }
