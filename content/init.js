@@ -731,7 +731,7 @@ const stacktraceCallback = function(stackFrames) {
 
 const oldWebAssemblyInstantiate = WebAssembly.instantiate;
 
-const webAssemblyInstantiateHook = function(bufferSource, importObject) {
+const webAssemblyInstantiateHook = function(bufferSource, importObject = {}) {
     colorLog("WebAssembly.instantiate() intercepted");
 
     const instrumentResults = instrumentBinary(bufferSource);
@@ -739,9 +739,16 @@ const webAssemblyInstantiateHook = function(bufferSource, importObject) {
     const instrumentedBuffer = instrumentResults.buffer;
     const instrumentedSymbols = instrumentResults.symbols;
 
-    const memoryModule = instrumentResults.memory.module;
-    const memoryField = instrumentResults.memory.field;
-    const memoryInstance = importObject[memoryModule][memoryField];
+    let memoryInstance = null;
+
+    if (typeof instrumentResults.memory !== "undefined") {
+        const memoryModule = instrumentResults.memory.module;
+        const memoryField = instrumentResults.memory.field;
+
+        if (typeof memoryModule === "string" && typeof memoryField === "string") {
+            memoryInstance = importObject[memoryModule][memoryField];
+        }
+    }
 
     // Emscripten by default stores most of the environment in importObject.env
     // If it doesn't exist already let's create it so we have a place to put 
@@ -782,9 +789,16 @@ const webAssemblyModuleHook = function(bufferSource) {
     const instrumentedBuffer = instrumentResults.buffer;
     const instrumentedSymbols = instrumentResults.symbols;
 
-    const memoryModule = instrumentResults.memory.module;
-    const memoryField = instrumentResults.memory.field;
-    const memoryInstance = importObject[memoryModule][memoryField];
+    let memoryInstance = null;
+
+    if (typeof instrumentResults.memory !== "undefined") {
+        const memoryModule = instrumentResults.memory.module;
+        const memoryField = instrumentResults.memory.field;
+
+        if (typeof memoryModule === "string" && typeof memoryField === "string") {
+            memoryInstance = importObject[memoryModule][memoryField];
+        }
+    }
 
     // Emscripten by default stores most of the environment in importObject.env
     // If it doesn't exist already let's create it so we have a place to put 
@@ -807,7 +821,7 @@ window.WebAssembly.Module = webAssemblyModuleHook;
 
 const oldWebAssemblyInstance = WebAssembly.Instance;
 
-const webAssemblyInstanceHook = function(module, importObject) {
+const webAssemblyInstanceHook = function(module, importObject = {}) {
     colorLog("WebAssembly.Instance() intercepted");
 
     const instrumentResults = instrumentBinary(bufferSource);
@@ -815,9 +829,16 @@ const webAssemblyInstanceHook = function(module, importObject) {
     const instrumentedBuffer = instrumentResults.buffer;
     const instrumentedSymbols = instrumentResults.symbols;
 
-    const memoryModule = instrumentResults.memory.module;
-    const memoryField = instrumentResults.memory.field;
-    const memoryInstance = importObject[memoryModule][memoryField];
+    let memoryInstance = null;
+
+    if (typeof instrumentResults.memory !== "undefined") {
+        const memoryModule = instrumentResults.memory.module;
+        const memoryField = instrumentResults.memory.field;
+
+        if (typeof memoryModule === "string" && typeof memoryField === "string") {
+            memoryInstance = importObject[memoryModule][memoryField];
+        }
+    }
 
     // Emscripten by default stores most of the environment in importObject.env
     // If it doesn't exist already let's create it so we have a place to put 
