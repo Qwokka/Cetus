@@ -139,15 +139,25 @@ const TextReader = class {
     readInteger() {
         const numStr = this.readString();
 
-        if (this.readString === false) {
-            return false;
-        }
-
         if (isNaN(numStr)) {
-            throw new Error("Invalid integer "+numStr);
+            throw new Error(`Invalid integer "${numStr}"`);
         }
 
         const numVal = parseInt(numStr);
+
+        return numVal;
+    }
+
+    // Reads the next string as a float (Represented by Javascript "number" type)
+    // May return NaN if the string "NaN" (case insensitive) is encountered
+    readFloat() {
+        const numStr = this.readStringLower();
+
+        if ((numStr.length == 0) || (numStr !== "nan" && isNaN(numStr))) {
+            throw new Error(`Invalid float "${numStr}"`);
+        }
+
+        const numVal = parseFloat(numStr);
 
         return numVal;
     }
@@ -162,7 +172,7 @@ const TextReader = class {
         }
         else {
             if (isNaN(callTarget)) {
-                throw new Error("Invalid integer "+callTarget);
+                throw new Error(`Invalid call target "${callTarget}"`);
             }
 
             realCallTarget = parseInt(callTarget);
@@ -194,7 +204,7 @@ const TextReader = class {
         const numVal = this.readInteger();
 
         if (numVal < 0 || numVal > 1) {
-            throw new Error("Value must be between 0 - 1");
+            throw new Error(`Value must be between 0 - 1, got ${numVal}`);
         }
 
         return numVal;
@@ -204,7 +214,7 @@ const TextReader = class {
         const numVal = this.readInteger();
 
         if (numVal < 0 || numVal > 0xFF) {
-            throw new Error("Value must be between 0 - 0xFF");
+            throw new Error(`Value must be between 0 - 0xFF, got ${numVal}`);
         }
 
         return numVal;
@@ -231,11 +241,11 @@ const TextReader = class {
             const thisName = nameArray[i];
 
             if (typeof thisName !== "string") {
-                throw new Error("Invalid keyword name in disassembler.readKeywords()");
+                throw new Error(`Invalid keyword "${i}" in disassembler.readKeywords()`);
             }
 
             if (typeof matched[thisName] === "undefined") {
-                throw new Error("Unmatched keyword "+thisName);
+                throw new Error(`Unmatched keyword "${thisName}"`);
             }
 
             results.push(matched[thisName]);
@@ -636,7 +646,7 @@ const Assembler = class {
             case "f32.const":
                 this._output.copyBuffer([ OP_F32_CONST ]);
 
-                immediate1 = lineReader.readInteger();
+                immediate1 = lineReader.readFloat();
 
                 const f32Array = new Float32Array([immediate1]);
 
@@ -647,7 +657,7 @@ const Assembler = class {
             case "f64.const":
                 this._output.copyBuffer([ OP_F64_CONST ]);
 
-                immediate1 = lineReader.readInteger();
+                immediate1 = lineReader.readFloat();
 
                 const f64Array = new Float64Array([immediate1]);
 
@@ -1025,7 +1035,7 @@ const Assembler = class {
                 this._output.copyBuffer([ OP_F64_REINTERPRET_I64 ]);
                 break;
             default:
-                throw new Error("Bad instruction "+opText);
+                throw new Error(`Bad instruction "${opText}"`);
         }
 
         return true;
