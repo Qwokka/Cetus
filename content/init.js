@@ -776,91 +776,77 @@ const webAssemblyInstantiateHook = function(bufferSource, importObject = {}) {
 
 window.WebAssembly.instantiate = webAssemblyInstantiateHook;
 
-let instrumentedBuffer;
-let instrumentedSymbols;
+const webAssemblyModuleProxy = new Proxy(WebAssembly.Module, {
+    construct: function(target, args) {
+        colorLog("WebAssembly.Module() intercepted");
 
-const oldWebAssemblyModule = WebAssembly.Module;
+        const bufferSource = args[0];
 
-const webAssemblyModuleHook = function(bufferSource) {
-    colorLog("WebAssembly.Module() intercepted");
+        const instrumentResults = instrumentBinary(bufferSource);
 
-    const instrumentResults = instrumentBinary(bufferSource);
+        const instrumentedBuffer = instrumentResults.buffer;
+        const instrumentedSymbols = instrumentResults.symbols;
 
-    const instrumentedBuffer = instrumentResults.buffer;
-    const instrumentedSymbols = instrumentResults.symbols;
+        const result = new target(instrumentedBuffer);
 
-    let memoryInstance = null;
+        // WebAssembly.Module is typically followed up by an instantiation of
+        // WebAssembly.Instance with the resulting Module object.
+        // We save the instrumentation results from WAIL so that WebAssembly.Instance
+        // can access them.
+        result._instrumentResults = instrumentResults;
 
-    if (typeof instrumentResults.memory !== "undefined") {
-        const memoryModule = instrumentResults.memory.module;
-        const memoryField = instrumentResults.memory.field;
+        return result;
+    }
+});
 
-        if (typeof memoryModule === "string" && typeof memoryField === "string") {
-            memoryInstance = importObject[memoryModule][memoryField];
+window.WebAssembly.Module = webAssemblyModuleProxy;
+
+const webAssemblyInstanceProxy = new Proxy(WebAssembly.Instance, {
+    construct: function(target, args) {
+        colorLog("WebAssembly.Instance() intercepted");
+
+        const module = args[0];
+        const importObject = args[1] || {};
+
+        // If this module was intercepted through an instantiation of WebAssembly.Module,
+        // it should have its instrumentsResults object attached to it
+        const instrumentResults = module._instrumentResults;
+
+        let memoryInstance = null;
+
+        if (typeof instrumentResults.memory !== "undefined") {
+            const memoryModule = instrumentResults.memory.module;
+            const memoryField = instrumentResults.memory.field;
+
+            if (typeof memoryModule === "string" && typeof memoryField === "string") {
+                memoryInstance = importObject[memoryModule][memoryField];
+            }
         }
-    }
 
-    // Emscripten by default stores most of the environment in importObject.env
-    // If it doesn't exist already let's create it so we have a place to put 
-    // our imported functions
-    if (typeof importObject.env !== "object") {
-        importObject.env = {};
-    }
-
-    cetus = new Cetus({
-        memory: memoryInstance,
-        watchpointExports: [instanceObject.instance.exports.addWatch],
-        buffer: instrumentedBuffer,
-        symbols: instrumentedSymbols
-    });
-
-    return oldWebAssemblyModule(instrumentedBuffer);
-};
-
-window.WebAssembly.Module = webAssemblyModuleHook;
-
-const oldWebAssemblyInstance = WebAssembly.Instance;
-
-const webAssemblyInstanceHook = function(module, importObject = {}) {
-    colorLog("WebAssembly.Instance() intercepted");
-
-    const instrumentResults = instrumentBinary(bufferSource);
-
-    const instrumentedBuffer = instrumentResults.buffer;
-    const instrumentedSymbols = instrumentResults.symbols;
-
-    let memoryInstance = null;
-
-    if (typeof instrumentResults.memory !== "undefined") {
-        const memoryModule = instrumentResults.memory.module;
-        const memoryField = instrumentResults.memory.field;
-
-        if (typeof memoryModule === "string" && typeof memoryField === "string") {
-            memoryInstance = importObject[memoryModule][memoryField];
+        // Emscripten by default stores most of the environment in importObject.env
+        // If it doesn't exist already let's create it so we have a place to put 
+        // our imported functions
+        if (typeof importObject.env !== "object") {
+            importObject.env = {};
         }
+
+        importObject.env.readWatchCallback = readWatchCallback;
+        importObject.env.writeWatchCallback = writeWatchCallback;
+
+        const result = new target(module, importObject);
+
+        cetus = new Cetus({
+            memory: memoryInstance,
+            watchpointExports: [result.exports.addWatch],
+            buffer: instrumentResults.instrumentedBuffer,
+            symbols: instrumentResults.instrumentedSymbols
+        });
+
+        return result;
     }
+});
 
-    // Emscripten by default stores most of the environment in importObject.env
-    // If it doesn't exist already let's create it so we have a place to put 
-    // our imported functions
-    if (typeof importObject.env !== "object") {
-        importObject.env = {};
-    }
-
-    importObject.env.readWatchCallback = readWatchCallback;
-    importObject.env.writeWatchCallback = writeWatchCallback;
-
-    cetus = new Cetus({
-        memory: memoryInstance,
-        watchpointExports: [instanceObject.instance.exports.addWatch],
-        buffer: instrumentedBuffer,
-        symbols: instrumentedSymbols
-    });
-
-    return oldWebAssemblyInstance(instrumentedBuffer, importObject);
-};
-
-window.WebAssembly.Instance = webAssemblyInstanceHook;
+window.WebAssembly.Instance = webAssemblyInstanceProxy;
 
 const oldWebAssemblyInstantiateStreaming = WebAssembly.instantiateStreaming;
 
