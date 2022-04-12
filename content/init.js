@@ -613,20 +613,44 @@ const instrumentBinary = function(bufferSource) {
 
     wail.addInstructionParser(OP_ATOMIC, atomicInstrCallback);
 
-    let memoryInstancePath = {};
+    let memoryInstancePath;
 
     // We use this callback to retrieve the path to the memory object
     // If multiple memory objects are supported in the future, this will need to change
-    const importInstrCallback = function(parameters) {
+    const importEntryCallback = function(parameters) {
         if (parameters.kind == KIND_MEMORY) {
             const decoder = new TextDecoder();
 
+            if (typeof memoryInstancePath !== "undefined") {
+                colorError("Received multiple memory entries. This is unsupported by Cetus!");
+            }
+
+            memoryInstancePath = {};
+
+            memoryInstancePath.type = "import";
             memoryInstancePath.module = decoder.decode(parameters.module);
             memoryInstancePath.field = decoder.decode(parameters.field);
         }
     }
 
-    wail.addImportElementParser(null, importInstrCallback);
+    wail.addImportElementParser(null, importEntryCallback);
+
+    const exportEntryCallback = function(parameters) {
+        if (parameters.kind == KIND_MEMORY) {
+            const decoder = new TextDecoder();
+
+            if (typeof memoryInstancePath !== "undefined") {
+                colorError("Received multiple memory entries. This is unsupported by Cetus!");
+            }
+
+            memoryInstancePath = {};
+
+            memoryInstancePath.type = "export";
+            memoryInstancePath.field = decoder.decode(parameters.field);
+        }
+    }
+
+    wail.addExportElementParser(null, exportEntryCallback);
 
     // cetusPatches will be set early on in page load if there are any configured patches
     // for this binary
@@ -731,19 +755,49 @@ const stacktraceCallback = function(stackFrames) {
 
 const oldWebAssemblyInstantiate = WebAssembly.instantiate;
 
-const webAssemblyInstantiateHook = function(bufferSource, importObject = {}) {
+const webAssemblyInstantiateHook = function(inObject, importObject = {}) {
     colorLog("WebAssembly.instantiate() intercepted");
 
-    const instrumentResults = instrumentBinary(bufferSource);
-
-    const instrumentedBuffer = instrumentResults.buffer;
-    const instrumentedSymbols = instrumentResults.symbols;
-
     let memoryInstance = null;
+    let memoryDescriptor;
 
-    if (typeof instrumentResults.memory !== "undefined") {
-        const memoryModule = instrumentResults.memory.module;
-        const memoryField = instrumentResults.memory.field;
+    let instrumentedBuffer;
+    let instrumentedSymbols;
+    let instrumentedObject;
+
+    // If WebAssembly.instantiate() receives a WebAssembly.Module object, we should already have
+    // instrumented the binary in webAssemblyModuleProxy()
+    // We should also have attached the "memory" and "symbols" objects to the module so that we
+    // can reach them here.
+    if (inObject instanceof WebAssembly.Module) {
+        if (typeof inObject.__cetus_env === "undefined") {
+            colorError("WebAssembly.instantiate() received an un-instrumented WebAssembly.Module. This is most likely a bug!");
+            return oldWebAssemblyInstantiate(inObject, importObject);
+        }
+
+        memoryDescriptor    = inObject.__cetus_env.memory;
+        instrumentedSymbols = inObject.__cetus_env.symbols;
+        instrumentedBuffer  = inObject.__cetus_env.buffer;
+
+        exportsInstance     = WebAssembly.Module.exports(inObject);
+
+        instrumentedObject = inObject;
+    }
+    else {
+        const bufferSource = inObject;
+
+        const instrumentResults = instrumentBinary(bufferSource);
+
+        memoryDescriptor = instrumentResults.memory;
+        instrumentedBuffer = instrumentResults.buffer;
+        instrumentedSymbols = instrumentResults.symbols;
+
+        instrumentedObject = instrumentedBuffer;
+    }
+
+    if (typeof memoryDescriptor !== "undefined" && memoryDescriptor.type === "import") {
+        const memoryModule = memoryDescriptor.module;
+        const memoryField = memoryDescriptor.field;
 
         if (typeof memoryModule === "string" && typeof memoryField === "string") {
             memoryInstance = importObject[memoryModule][memoryField];
@@ -761,10 +815,26 @@ const webAssemblyInstantiateHook = function(bufferSource, importObject = {}) {
     importObject.env.writeWatchCallback = writeWatchCallback;
 
     return new Promise(function(resolve, reject) {
-        oldWebAssemblyInstantiate(instrumentedBuffer, importObject).then(function(instanceObject) {
+        oldWebAssemblyInstantiate(instrumentedObject, importObject).then(function(instanceObject) {
+            if (typeof memoryDescriptor !== "undefined" && memoryDescriptor.type === "export") {
+                const memoryField = memoryDescriptor.field;
+
+                if (typeof memoryField === "string") {
+                    memoryInstance = instanceObject.exports[memoryField];
+                }
+            }
+
+            if (!(memoryInstance instanceof WebAssembly.Memory)) {
+                colorError("Cetus failed to retrieve a WebAssembly.Memory object");
+            }
+
+            if (typeof instanceObject.instance !== "undefined") {
+                instanceObject = instanceObject.instance;
+            }
+
             cetus = new Cetus({
                 memory: memoryInstance,
-                watchpointExports: [instanceObject.instance.exports.addWatch],
+                watchpointExports: [instanceObject.exports.addWatch],
                 buffer: instrumentedBuffer,
                 symbols: instrumentedSymbols
             });
@@ -924,3 +994,39 @@ const webAssemblyInstantiateStreamingHook = function(sourceObj, importObject = {
 };
 
 window.WebAssembly.instantiateStreaming = webAssemblyInstantiateStreamingHook;
+
+const oldWebAssemblyCompile = WebAssembly.compile;
+
+const webAssemblyCompileHook = function(bufferSource) {
+    colorLog("WebAssembly.compile() intercepted");
+
+    const instrumentResults = instrumentBinary(bufferSource);
+    const instrumentedBuffer = instrumentResults.buffer;
+
+    const compiledModule = oldWebAssemblyCompile(instrumentedBuffer);
+
+    return new Promise(function(resolve, reject) {
+        oldWebAssemblyCompile(instrumentedBuffer).then(function(moduleObject) {
+            // Store these values in the module object so that WebAssembly.Instantiate can access them
+            moduleObject.__cetus_env = {
+                buffer: instrumentedBuffer,
+                memory: instrumentResults.memory,
+                symbols: instrumentResults.symbols,
+            };
+
+            resolve(moduleObject);
+        });
+    });
+}
+
+window.WebAssembly.compile = webAssemblyCompileHook;
+
+const oldWebAssemblyCompileStreaming = WebAssembly.compileStreaming;
+
+const webAssemblyCompileStreamingHook = function(source) {
+    colorError("WebAssembly.compileStreaming() not implemented!");
+
+    return oldWebAssemblyCompileStreaming(source);
+}
+
+window.WebAssembly.compileStreaming = webAssemblyCompileStreamingHook;
