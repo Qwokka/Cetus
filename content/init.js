@@ -828,13 +828,15 @@ const webAssemblyInstantiateHook = function(inObject, importObject = {}) {
                 colorError("Cetus failed to retrieve a WebAssembly.Memory object");
             }
 
+            let instance = instanceObject;
+
             if (typeof instanceObject.instance !== "undefined") {
-                instanceObject = instanceObject.instance;
+                instance = instanceObject.instance;
             }
 
             cetus = new Cetus({
                 memory: memoryInstance,
-                watchpointExports: [instanceObject.exports.addWatch],
+                watchpointExports: [instance.exports.addWatch],
                 buffer: instrumentedBuffer,
                 symbols: instrumentedSymbols
             });
