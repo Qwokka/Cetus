@@ -14,7 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-let cetus = null;
+if (typeof cetus === "undefined") {
+    cetus = null;
+}
 
 // Inform the extension when we leave the page
 window.onbeforeunload = function() {
