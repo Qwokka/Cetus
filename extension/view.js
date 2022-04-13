@@ -708,11 +708,7 @@ const updateStringSearchResults = function(resultCount, resultObject) {
 		cell.innerText = toHex(address);
 
 		cell = row.insertCell();
-		if (bigintIsNaN(value)) {
-			cell.innerText = value;
-		} else {	
-			cell.innerText = formatValue(value, resultMemType);
-        }
+        cell.innerText = value;
 	}
 
 	document.getElementById('stringResults').innerHTML = '';
