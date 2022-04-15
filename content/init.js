@@ -693,6 +693,18 @@ const instrumentBinary = function(bufferSource) {
     return resultObj;
 };
 
+const getMemoryFromObject = function(inObject, memoryDescriptor) {
+        const memoryModule = memoryDescriptor.module;
+        const memoryField = memoryDescriptor.field;
+
+        if (typeof memoryModule === "string" && typeof memoryField === "string") {
+            return inObject[memoryModule][memoryField];
+        }
+        else if (typeof memoryField === "string") {
+            return inObject[memoryField];
+        }
+};
+
 // Callback that is executed when a read watchpoint is hit
 const readWatchCallback = function() {
     const stackTrace = StackTrace.get().then(stacktraceCallback);
@@ -798,12 +810,7 @@ const webAssemblyInstantiateHook = function(inObject, importObject = {}) {
     }
 
     if (typeof memoryDescriptor !== "undefined" && memoryDescriptor.type === "import") {
-        const memoryModule = memoryDescriptor.module;
-        const memoryField = memoryDescriptor.field;
-
-        if (typeof memoryModule === "string" && typeof memoryField === "string") {
-            memoryInstance = importObject[memoryModule][memoryField];
-        }
+        memoryInstance = getMemoryFromObject(importObject, memoryDescriptor);
     }
 
     // Emscripten by default stores most of the environment in importObject.env
@@ -819,15 +826,11 @@ const webAssemblyInstantiateHook = function(inObject, importObject = {}) {
     return new Promise(function(resolve, reject) {
         oldWebAssemblyInstantiate(instrumentedObject, importObject).then(function(instanceObject) {
             if (typeof memoryDescriptor !== "undefined" && memoryDescriptor.type === "export") {
-                const memoryField = memoryDescriptor.field;
-
-                if (typeof memoryField === "string") {
-                    memoryInstance = instanceObject.exports[memoryField];
-                }
+                memoryInstance = getMemoryFromObject(instanceObject.exports, memoryDescriptor);
             }
 
             if (!(memoryInstance instanceof WebAssembly.Memory)) {
-                colorError("Cetus failed to retrieve a WebAssembly.Memory object");
+                colorError("WebAssembly.instantiate() failed to retrieve a WebAssembly.Memory object");
             }
 
             let instance = instanceObject;
@@ -929,7 +932,7 @@ const webAssemblyInstantiateStreamingHook = function(sourceObj, importObject = {
 
     // TODO In the future we should retrieve the memory object by parsing the IMPORT/EXPORT
     // sections of the binary. But for now this is pretty reliable
-    let memoryObj = null;
+    let memoryInstance = null;
 
     // Some older versions of emscripten use importObject.a instead of importObject.env.
     // Simply link importObject.a to importObject.env if importObject.a exists
@@ -942,11 +945,6 @@ const webAssemblyInstantiateStreamingHook = function(sourceObj, importObject = {
     // our imported functions
     if (typeof importObject.env === "undefined") {
         importObject.env = {};
-    }
-    else {
-        if (importObject.env.memory instanceof WebAssembly.Memory) {
-            memoryObj = importObject.env.memory;
-        }
     }
 
     importObject.env.readWatchCallback = readWatchCallback;
@@ -961,17 +959,23 @@ const webAssemblyInstantiateStreamingHook = function(sourceObj, importObject = {
             const instrumentedBuffer = instrumentResults.buffer;
             const instrumentedSymbols = instrumentResults.symbols;
 
+            const memoryDescriptor = instrumentResults.memory;
+
+            if (typeof memoryDescriptor !== "undefined" && memoryDescriptor.type === "import") {
+                memoryInstance = getMemoryFromObject(importObject, memoryDescriptor);
+            }
+
             oldWebAssemblyInstantiate(instrumentedBuffer, importObject).then(function(instanceObject) {
-                if (memoryObj == null) {
-                    memoryObj = instanceObject.instance.exports.memory;
+                if (typeof memoryDescriptor !== "undefined" && memoryDescriptor.type === "export") {
+                    memoryInstance = getMemoryFromObject(instanceObject.instance.exports, memoryDescriptor);
                 }
 
-                if (memoryObj == null) {
-                    memoryObj = instanceObject.instance.exports.Ed;
+                if (!(memoryInstance instanceof WebAssembly.Memory)) {
+                    colorError("WebAssembly.instantiateStreaming() failed to retrieve a WebAssembly.Memory object");
                 }
 
                 cetus = new Cetus({
-                    memory: memoryObj,
+                    memory: memoryInstance,
                     watchpointExports: [instanceObject.instance.exports.addWatch],
                     buffer: instrumentedBuffer,
                     symbols: instrumentedSymbols

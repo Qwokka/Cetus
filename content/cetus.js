@@ -24,6 +24,10 @@ class Cetus {
     constructor(env) {
         this.watchpointExports = env.watchpointExports;
 
+        if (!(env.memory instanceof WebAssembly.Memory)) {
+            colorError("Cetus received an invalid memory object! This is a bug!");
+        }
+
         this._memObject = env.memory;
         this._buffer = env.buffer;
         this._symbols = env.symbols;
