@@ -1011,8 +1011,6 @@ const webAssemblyCompileHook = function(bufferSource) {
     const instrumentResults = instrumentBinary(bufferSource);
     const instrumentedBuffer = instrumentResults.buffer;
 
-    const compiledModule = oldWebAssemblyCompile(instrumentedBuffer);
-
     return new Promise(function(resolve, reject) {
         oldWebAssemblyCompile(instrumentedBuffer).then(function(moduleObject) {
             // Store these values in the module object so that WebAssembly.Instantiate can access them
