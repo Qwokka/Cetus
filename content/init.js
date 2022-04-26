@@ -825,18 +825,24 @@ const webAssemblyInstantiateHook = function(inObject, importObject = {}) {
 
     return new Promise(function(resolve, reject) {
         oldWebAssemblyInstantiate(instrumentedObject, importObject).then(function(instanceObject) {
-            if (typeof memoryDescriptor !== "undefined" && memoryDescriptor.type === "export") {
-                memoryInstance = getMemoryFromObject(instanceObject.exports, memoryDescriptor);
-            }
-
-            if (!(memoryInstance instanceof WebAssembly.Memory)) {
-                colorError("WebAssembly.instantiate() failed to retrieve a WebAssembly.Memory object");
-            }
-
             let instance = instanceObject;
 
             if (typeof instanceObject.instance !== "undefined") {
                 instance = instanceObject.instance;
+            }
+
+            if (typeof memoryDescriptor !== "undefined" && memoryDescriptor.type === "export") {
+                let exportObject = instance.exports;
+
+                if (typeof exportObject !== "object") {
+                    colorError("WebAssembly.instantiate() failed to retrieve export object for instantiated module");
+                }
+
+                memoryInstance = getMemoryFromObject(exportObject, memoryDescriptor);
+            }
+
+            if (!(memoryInstance instanceof WebAssembly.Memory)) {
+                colorError("WebAssembly.instantiate() failed to retrieve a WebAssembly.Memory object");
             }
 
             cetus = new Cetus({
