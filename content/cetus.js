@@ -204,8 +204,9 @@ class Cetus {
         return this._searchSubset;
     }
 
+    // TODO Should support unaligned searching
     _diffCompare(comparator, memType, lowerBound, upperBound) {
-        const memory = this.memory(memType);
+        const memory = this.alignedMemory(memType);
 
         if (Object.keys(this._searchSubset).length == 0) {
             for (let i = 0; i < this._savedMemory.length; i++) {
@@ -216,6 +217,7 @@ class Cetus {
             }
         }
         else {
+            console.log(lowerBound, upperBound);
             for (let entry in this._searchSubset) {
                 if (entry < lowerBound ||
                     entry > upperBound ||
@@ -233,7 +235,7 @@ class Cetus {
         return this._searchSubset;
     }
 
-    search(searchComparison, searchMemType, searchMemAlign, searchParam, lowerBound = 0, upperBound = 0xFFFFFFFF) {
+    search(searchComparison, searchMemType, searchMemAlign, searchParam = null, lowerBound = 0, upperBound = 0xFFFFFFFF) {
         this.createSearchMemory(searchMemType, searchMemAlign);
 
         let realLowerBound = parseInt(lowerBound);
@@ -293,13 +295,14 @@ class Cetus {
 
         const searchResults = {};
 
-        // If searchParam is null, the user is attempting a differential search
+        // If searchParam is null or not provided, the user is attempting a differential search
         // If this is the first search of a differential search, we just want to
         // collect a slice of the memory object of that type.
         if (searchParam === null) {
             if (this._savedMemory == null) {
-                // Upper bound is inclusive
-                this._savedMemory = this.memory(searchMemType).slice(realLowerBound, realUpperBound + 1);
+                // TODO Should support unaligned searching
+                this._savedMemory = this.alignedMemory(searchMemType).slice(realLowerBound, realUpperBound + 1);
+
                 this._savedLowerBound = realLowerBound;
 
                 searchResults.count = this._savedMemory.length;
