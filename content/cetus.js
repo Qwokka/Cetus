@@ -212,20 +212,22 @@ class Cetus {
             for (let i = 0; i < this._savedMemory.length; i++) {
                 const adjustedIndex = this._savedLowerBound + i;
                 if (comparator(memory[adjustedIndex], this._savedMemory[i]) == true) {
-                    this._searchSubset[adjustedIndex] = memory[adjustedIndex];
+                    const realAddress = indexToRealAddress(adjustedIndex, memType);
+                    this._searchSubset[realAddress] = memory[adjustedIndex];
                 }
             }
         }
         else {
             console.log(lowerBound, upperBound);
             for (let entry in this._searchSubset) {
+                const entryIndex = realAddressToIndex(entry, memType);
                 if (entry < lowerBound ||
                     entry > upperBound ||
-                    comparator(memory[entry], this._savedMemory[entry]) == false) {
+                    comparator(memory[entryIndex], this._savedMemory[entryIndex]) == false) {
                     delete this._searchSubset[entry];
                 }
                 else {
-                    this._searchSubset[entry] = memory[entry];
+                    this._searchSubset[entry] = memory[entryIndex];
                 }
             }
         }
