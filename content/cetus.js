@@ -223,7 +223,7 @@ class Cetus {
                 const entryIndex = realAddressToIndex(entry, memType);
                 if (entry < lowerBound ||
                     entry > upperBound ||
-                    comparator(memory[entryIndex], this._savedMemory[entryIndex]) == false) {
+                    comparator(memory[entryIndex], this._savedMemory[entry]) == false) {
                     delete this._searchSubset[entry];
                 }
                 else {
