@@ -123,20 +123,36 @@ class PopupExtension {
         chrome.storage.local.set({ savedPatches: this._patches });
     }
 
+    // TODO Remove backwards compatibility code once we've stopped supporting the old patch spec
     savePatch(options) {
         const patchName = options.name;
 
-        const funcIndex = options.index;
-        const funcBytes = options.bytes;
+        let functionPatches;
+
+        if (typeof options.version === "undefined" && typeof options.index !== "undefined" && typeof options.bytes !== "undefined") {
+            const funcIndex = options.index;
+            const funcBytes = options.bytes;
+
+            functionPatches = [
+                {
+                    index: funcIndex,
+                    bytes: funcBytes,
+                }
+            ];
+        }
+        else {
+            functionPatches = options.functionPatches;
+        }
 
         const binaryUrl = options.url;
 
         const newPatchBody = {
             name: patchName,
-            index: funcIndex,
-            bytes: funcBytes,
             url: binaryUrl,
+            version: options.version,
             enabled: true,
+            functionPatches: functionPatches,
+            callbacks: options.callbacks,
         };
 
         this._patches.push(newPatchBody);

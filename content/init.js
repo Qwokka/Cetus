@@ -658,16 +658,35 @@ const instrumentBinary = function(bufferSource) {
     // for this binary
     if (typeof cetusPatches === "object") {
         for (let i = 0; i < cetusPatches.length; i++) {
-            const funcIndex = parseInt(cetusPatches[i].index);
-            const funcBytes = cetusPatches[i].bytes;
+            const thisPatch = cetusPatches[i];
 
-            const parserCallback = function(parameters) {
-                return funcBytes;
-            };
+            const funcPatches = thisPatch.functionPatches;
 
-            wail.addCodeElementParser(funcIndex, parserCallback);
+            for (let j = 0; j < funcPatches.length; j++) {
+                const thisFuncPatch = funcPatches[i];
+
+                const funcIndex = parseInt(thisFuncPatch.index);
+                const funcBytes = thisFuncPatch.bytes;
+
+                const parserCallback = function(parameters) {
+                    return funcBytes;
+                };
+
+                wail.addCodeElementParser(funcIndex, parserCallback);
+            }
         }
     }
+
+    if (typeof cetusCallbacks === "object" && typeof cetusCallbacks.processor === "object") {
+        const processorCallbacks = cetusCallbacks.processor;
+
+        for (let i = 0; i < processorCallbacks.length; i++) {
+            const processorFunc = new Function("processor", processorCallbacks[i]);
+
+            processorFunc(wail);
+        }
+    }
+
 
     wail.load(bufferSource);
 
@@ -960,6 +979,16 @@ const webAssemblyInstantiateStreamingHook = function(sourceObj, importObject = {
 
     return new Promise(function(resolve, reject) {
         const handleBuffer = function(bufferSource) {
+            if (typeof cetusCallbacks === "object" && typeof cetusCallbacks.preinstantiate === "object") {
+                const preinstantiateCallbacks = cetusCallbacks.preinstantiate;
+
+                for (let i = 0; i < preinstantiateCallbacks.length; i++) {
+                    const thisFunc = new Function("module", "importObject", preinstantiateCallbacks[i]);
+
+                    thisFunc(bufferSource, importObject);
+                }
+            }
+
             const instrumentResults = instrumentBinary(bufferSource);
 
             const instrumentedBuffer = instrumentResults.buffer;

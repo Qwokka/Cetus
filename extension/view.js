@@ -971,7 +971,8 @@ const createLoadPatchModal = function(savedPatches) {
 
         const row = table.insertRow();
         let cell = row.insertCell();
-        cell.innerText = thisPatch.index;
+        // FIXME Hacky
+        cell.innerText = ""
 
         cell = row.insertCell();
         cell.innerText = thisPatch.name;
@@ -1199,10 +1200,9 @@ const importPatch = function() {
                 return;
             }
 
-            if (typeof patchObj.name !== "string" ||
-                typeof patchObj.index !== "string" ||
-                typeof patchObj.url !== "string" ||
-                !(patchObj.bytes instanceof Array)) {
+            // TODO This is simplified for backwards compatibility with the old patch spec. At some point we should remove support for the old spec and
+            // flesh this check out more.
+            if (typeof patchObj.name !== "string" || typeof patchObj.url !== "string") {
                 // TODO Alert user on bad format error
                 return;
             }

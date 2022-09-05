@@ -66,25 +66,63 @@ storageGet("savedPatches", function(result) {
 
         const injectPatches = [];
 
+        // TODO Post instantiate callbacks
+        const processorCallbacks = [];
+        const preinstantiateCallbacks = [];
+
         if (typeof savedPatches !== "undefined") {
             for (let i = 0; i < savedPatches.length; i++) {
                 const thisPatch = savedPatches[i];
 
                 // TODO Improve this matching in the future
                 if (thisPatch.url == (window.location.host + window.location.pathname) && thisPatch.enabled) {
+                    // TODO The original function patch spec sucked, so now we have extra checks for backwards compatibility. In the future, this should
+                    // just be removed.
+                    let functionPatches;
+
+                    if (typeof thisPatch.version === "undefined") {
+                        functionPatches = [
+                            {
+                                index: thisPatch.index,
+                                bytes: thisPatch.bytes,
+                            }
+                        ];
+                    }
+                    else {
+                        functionPatches = thisPatch.functionPatches;
+                    }
+
                     const patchParams = {
-                        index: thisPatch.index,
-                        bytes: thisPatch.bytes
+                        version: thisPatch.version,
+                        functionPatches: functionPatches,
                     };
 
                     injectPatches.push(patchParams);
+
+                    const callbacks = thisPatch.callbacks;
+
+                    if (typeof callbacks === "object") {
+                        if (typeof callbacks.processor === "string" ) {
+                            processorCallbacks.push(thisPatch.callbacks.processor);
+                        }
+                        if (typeof callbacks.preinstantiate === "string" ) {
+                            preinstantiateCallbacks.push(thisPatch.callbacks.preinstantiate);
+                        }
+                    }
                 }
             }
 
-            if (injectPatches.length > 0) {
+            if (injectPatches.length > 0 || preinstantiateCallbacks.length > 0) {
                 const injectPatchesStr = JSON.stringify(injectPatches);
 
-                const code = `const cetusPatches = ${injectPatchesStr};`;
+                const allCallbacks = {
+                    processor: processorCallbacks,
+                    preinstantiate: preinstantiateCallbacks,
+                }
+
+                const allCallbacksStr = JSON.stringify(allCallbacks);
+
+                const code = `const cetusPatches = ${injectPatchesStr}; const cetusCallbacks = ${allCallbacksStr};`;
 
                 injectCode(code);
             }
