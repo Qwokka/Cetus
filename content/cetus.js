@@ -43,7 +43,6 @@ class Cetus {
 
         this._searchSubset = {};
         this._savedMemory  = null;
-        this._savedLowerBoundIndex = 0;
 
         this.speedhack = new SpeedHack(1);
 
@@ -147,7 +146,6 @@ class Cetus {
     restartSearch() {
         this._searchSubset = {};
         this._savedMemory = null;
-        this._savedLowerBoundIndex = 0;
 
         if (this.debugLevel >= 1) {
             colorLog("restartSearch: Search restarted");
@@ -323,8 +321,6 @@ class Cetus {
             if (this._savedMemory == null) {
                 // TODO Should support unaligned searching
                 this._savedMemory = this.alignedMemory(searchMemType).slice(realLowerBoundIndex, realUpperBoundIndex + 1);
-
-                this._savedLowerBoundIndex = realLowerBoundIndex;
 
                 searchResults.count = this._savedMemory.length;
 
