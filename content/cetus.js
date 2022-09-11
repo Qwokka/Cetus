@@ -20,6 +20,8 @@ const FLAG_FREEZE       = 1 << 2;
 
 const MAX_WATCHPOINTS   = 1;
 
+const MAX_SEARCH_RESULTS = 1000;
+
 class Cetus {
     constructor(env) {
         this.watchpointExports = env.watchpointExports;
@@ -41,7 +43,7 @@ class Cetus {
 
         this._searchSubset = {};
         this._savedMemory  = null;
-        this._savedLowerBound = 0;
+        this._savedLowerBoundIndex = 0;
 
         this.speedhack = new SpeedHack(1);
 
@@ -145,7 +147,7 @@ class Cetus {
     restartSearch() {
         this._searchSubset = {};
         this._savedMemory = null;
-        this._savedLowerBound = 0;
+        this._savedLowerBoundIndex = 0;
 
         if (this.debugLevel >= 1) {
             colorLog("restartSearch: Search restarted");
@@ -205,57 +207,74 @@ class Cetus {
     }
 
     // TODO Should support unaligned searching
-    _diffCompare(comparator, memType, lowerBound, upperBound) {
+    _diffCompare(comparator, memType, lowerBoundIndex, upperBoundIndex) {
         const memory = this.alignedMemory(memType);
 
         if (Object.keys(this._searchSubset).length == 0) {
-            for (let i = 0; i < this._savedMemory.length; i++) {
-                const adjustedIndex = this._savedLowerBound + i;
-                if (comparator(memory[adjustedIndex], this._savedMemory[i]) == true) {
-                    const realAddress = indexToRealAddress(adjustedIndex, memType);
-                    this._searchSubset[realAddress] = memory[adjustedIndex];
+            for (let i = lowerBoundIndex; i < upperBoundIndex; i++) {
+                if (comparator(memory[i], this._savedMemory[i]) == true) {
+                    const realAddress = indexToRealAddress(i, memType);
+                    this._searchSubset[realAddress] = memory[i];
                 }
             }
         }
         else {
-            console.log(lowerBound, upperBound);
-            for (let entry in this._searchSubset) {
-                const entryIndex = realAddressToIndex(entry, memType);
-                if (entry < lowerBound ||
-                    entry > upperBound ||
-                    comparator(memory[entryIndex], this._savedMemory[entry]) == false) {
-                    delete this._searchSubset[entry];
+            for (let entryAddr in this._searchSubset) {
+                const entryIndex = realAddressToIndex(entryAddr, memType);
+                if (entryIndex < lowerBoundIndex ||
+                    entryIndex > upperBoundIndex ||
+                    comparator(memory[entryIndex], this._savedMemory[entryAddr]) == false) {
+                    delete this._searchSubset[entryAddr];
                 }
                 else {
-                    this._searchSubset[entry] = memory[entryIndex];
+                    this._searchSubset[entryAddr] = memory[entryIndex];
                 }
             }
         }
 
         this._savedMemory = this._searchSubset;
 
-        return this._searchSubset;
+        const searchObj = {};
+
+        searchObj.count = Object.keys(this._searchSubset).length;
+
+        // If we try to send too much data to the extension, we'll probably freeze the tab. Instead, if there are too many search results we
+        // send the accurate number of results, but don't actually send the matches
+        if (searchObj.count <= MAX_SEARCH_RESULTS) {
+            searchObj.results = this._searchSubset;
+        }
+        else {
+            searchObj.results = [];
+        }
+
+        return searchObj;
     }
 
     search(searchComparison, searchMemType, searchMemAlign, searchParam = null, lowerBound = 0, upperBound = 0xFFFFFFFF) {
         this.createSearchMemory(searchMemType, searchMemAlign);
 
-        let realLowerBound = parseInt(lowerBound);
-        let realUpperBound = parseInt(upperBound);
+        const memSize = this.getMemorySize();
 
-        if (realLowerBound < 0) {
-            realLowerBound = 0;
-        }
+        let lowerBoundAddr = parseInt(lowerBound);
+        let upperBoundAddr = parseInt(upperBound);
 
         // If we are searching aligned addresses, we want to make sure our lower bound is aligned
         if (searchMemAlign) {
-            realLowerBound -= (realLowerBound % getElementSize(searchMemType));
+            lowerBoundAddr -= (lowerBoundAddr % getElementSize(searchMemType));
         }
 
-        const memSize = this.getMemorySize();
+        if (upperBoundAddr >= memSize) {
+            upperBoundAddr = memSize - 1;
+        }
 
-        if (realUpperBound >= memSize) {
-            realUpperBound = memSize - 1;
+        const lowerBoundIndex = realAddressToIndex(lowerBoundAddr, searchMemType);
+        const upperBoundIndex = realAddressToIndex(upperBoundAddr, searchMemType);
+
+        let realLowerBoundIndex = lowerBoundIndex;
+        let realUpperBoundIndex = upperBoundIndex;
+
+        if (realLowerBoundIndex < 0) {
+            realLowerBoundIndex = 0;
         }
 
         let comparator;
@@ -295,7 +314,7 @@ class Cetus {
                 throw new Error("Invalid search comparison " + searchComparison);
         }
 
-        const searchResults = {};
+        let searchResults = {};
 
         // If searchParam is null or not provided, the user is attempting a differential search
         // If this is the first search of a differential search, we just want to
@@ -303,32 +322,39 @@ class Cetus {
         if (searchParam === null) {
             if (this._savedMemory == null) {
                 // TODO Should support unaligned searching
-                this._savedMemory = this.alignedMemory(searchMemType).slice(realLowerBound, realUpperBound + 1);
+                this._savedMemory = this.alignedMemory(searchMemType).slice(realLowerBoundIndex, realUpperBoundIndex + 1);
 
-                this._savedLowerBound = realLowerBound;
+                this._savedLowerBoundIndex = realLowerBoundIndex;
 
                 searchResults.count = this._savedMemory.length;
-                searchResults.results = [];
+
+                if (this._savedMemory.length <= MAX_SEARCH_RESULTS) {
+                    const realResults = {};
+
+                    for (let i = 0; i < this._savedMemory.length; i++) {
+                        const realAddress = indexToRealAddress(realLowerBoundIndex + i, searchMemType);
+                        realResults[realAddress] = this._savedMemory[i];
+                    }
+
+                    searchResults.results = realResults;
+                }
+                else {
+                    searchResults.results = [];
+                }
             }
             else {
-                let searchReturn = this._diffCompare(comparator,
-                                                     searchMemType,
-                                                     realLowerBound,
-                                                     realUpperBound);
-
-                searchResults.count = Object.keys(searchReturn).length;
-                searchResults.results = searchReturn;
+                searchResults = this._diffCompare(comparator,
+                                                  searchMemType,
+                                                  realLowerBoundIndex,
+                                                  realUpperBoundIndex);
             }
         }
         else {
-            let searchReturn = this._compare(comparator,
-                                             searchMemType,
-                                             searchMemAlign,
-                                             realLowerBound,
-                                             realUpperBound);
-
-            searchResults.count = Object.keys(searchReturn).length;
-            searchResults.results = searchReturn;
+            searchResults = this._compare(comparator,
+                                          searchMemType,
+                                          searchMemAlign,
+                                          realLowerBound,
+                                          realUpperBound);
         }
 
         if (this.debugLevel >= 1) {
