@@ -201,7 +201,20 @@ class Cetus {
             }
         }
 
-        return this._searchSubset;
+        const searchObj = {};
+
+        searchObj.count = Object.keys(this._searchSubset).length;
+
+        // If we try to send too much data to the extension, we'll probably freeze the tab. Instead, if there are too many search results we
+        // send the accurate number of results, but don't actually send the matches
+        if (searchObj.count <= MAX_SEARCH_RESULTS) {
+            searchObj.results = this._searchSubset;
+        }
+        else {
+            searchObj.results = [];
+        }
+
+        return searchObj;
     }
 
     // TODO Should support unaligned searching
@@ -349,8 +362,8 @@ class Cetus {
             searchResults = this._compare(comparator,
                                           searchMemType,
                                           searchMemAlign,
-                                          realLowerBound,
-                                          realUpperBound);
+                                          lowerBoundAddr,
+                                          upperBoundAddr);
         }
 
         if (this.debugLevel >= 1) {
