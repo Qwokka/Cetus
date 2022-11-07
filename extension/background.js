@@ -536,7 +536,7 @@ chrome.runtime.onMessage.addListener(function(msgRaw) {
     const msgBody = msg.body;
 
     if (typeof msgType !== "string") {
-        return;
+        return true;
     }
 
     switch (msgType) {
@@ -762,6 +762,8 @@ chrome.runtime.onMessage.addListener(function(msgRaw) {
 
             break;
     }
+
+    return true;
 });
 
 setInterval(function() {
