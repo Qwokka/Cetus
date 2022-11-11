@@ -730,7 +730,7 @@ const speedHackDateNow = function() {
     const real = sh.oldDn.call(Date);
     const elapsed = (real - sh.startDn) * sh.multiplier;
 
-    return sh.startDn + elapsed;
+    return Math.floor(sh.startDn + elapsed);
 };
 
 const speedHackPerformanceNow = function() {
