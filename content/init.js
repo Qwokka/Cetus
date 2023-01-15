@@ -461,6 +461,7 @@ const instrumentBinary = function(bufferSource) {
         const pushSizeOpcode = [ OP_I32_CONST ];
 
         let pushSizeImmediate;
+        let arg;
 
         switch (opcode) {
             case OP_I32_LOAD8_S:
@@ -485,8 +486,37 @@ const instrumentBinary = function(bufferSource) {
             case OP_F64_LOAD:
                 pushSizeImmediate = VarUint32(8);
                 break;
+            case OP_SIMD:
+                arg = instrBytes[1];
+                switch(arg) {
+                    case SIMD_V128_LOAD8_LANE:
+                    case SIMD_V128_LOAD8_SPLAT:
+                        pushSizeImmediate = VarUint32(1);
+                        break;
+                    case SIMD_V128_LOAD16_LANE:
+                    case SIMD_V128_LOAD16_SPLAT:
+                        pushSizeImmediate = VarUint32(2);
+                    case SIMD_V128_LOAD32_LANE:
+                    case SIMD_V128_LOAD32_SPLAT:
+                    case SIMD_V128_LOAD32_ZERO:
+                        pushSizeImmediate = VarUint32(4);
+                    case SIMD_V128_LOAD8X8_S:
+                    case SIMD_V128_LOAD8X8_U:
+                    case SIMD_V128_LOAD16X4_S:
+                    case SIMD_V128_LOAD16X4_U:
+                    case SIMD_V128_LOAD32X2_S:
+                    case SIMD_V128_LOAD32X2_U:
+                    case SIMD_V128_LOAD64_LANE:
+                    case SIMD_V128_LOAD64_SPLAT:
+                    case SIMD_V128_LOAD64_ZERO:
+                        pushSizeImmediate = VarUint32(8);
+                    case SIMD_V128_LOAD:
+                        pushSizeImmediate = VarUint32(16);
+                        break;
+                }
+                break;
             case OP_ATOMIC:
-                const arg = instrBytes[1];
+                arg = instrBytes[1];
                 switch(arg) {
                     case ARG_I32_ATOMIC_LOAD:
                     case ARG_I64_ATOMIC_LOAD_32U:
@@ -570,6 +600,43 @@ const instrumentBinary = function(bufferSource) {
         return reader.write();
     };
 
+    // All SIMD instructions start with the same opcode (0xFD) so they need
+    // their own parser
+    // This parser just ensures that the instruction is actually a load/store
+    // then routes the instruction to the proper callback
+    const simdInstrCallback = function(instrBytes) {
+        const arg = instrBytes[1];
+
+        switch (arg) {
+            case SIMD_V128_LOAD:
+            case SIMD_V128_LOAD8X8_S:
+            case SIMD_V128_LOAD8X8_U:
+            case SIMD_V128_LOAD16X4_S:
+            case SIMD_V128_LOAD16X4_U:
+            case SIMD_V128_LOAD32X2_S:
+            case SIMD_V128_LOAD32X2_U:
+            case SIMD_V128_LOAD8_SPLAT:
+            case SIMD_V128_LOAD16_SPLAT:
+            case SIMD_V128_LOAD32_SPLAT:
+            case SIMD_V128_LOAD64_SPLAT:
+            case SIMD_V128_LOAD32_ZERO:
+            case SIMD_V128_LOAD64_ZERO:
+            case SIMD_V128_LOAD8_LANE:
+            case SIMD_V128_LOAD16_LANE:
+            case SIMD_V128_LOAD32_LANE:
+            case SIMD_V128_LOAD64_LANE:
+                return readWatchpointInstrCallback(instrBytes);
+            case SIMD_V128_STORE:
+            case SIMD_V128_STORE8_LANE:
+            case SIMD_V128_STORE16_LANE:
+            case SIMD_V128_STORE32_LANE:
+            case SIMD_V128_STORE64_LANE:
+                return writeWatchpointInstrCallback(instrBytes);
+        }
+
+        return instrBytes;
+    };
+
     // All atomic instructions start with the same opcode (0xFE) so they need
     // their own parser
     // This parser just ensures that the instruction is actually an atomic load/store
@@ -613,6 +680,7 @@ const instrumentBinary = function(bufferSource) {
     wail.addInstructionParser(OP_I64_STORE16, writeWatchpointInstrCallback);
     wail.addInstructionParser(OP_I64_STORE32, writeWatchpointInstrCallback);
 
+    wail.addInstructionParser(OP_SIMD, simdInstrCallback);
     wail.addInstructionParser(OP_ATOMIC, atomicInstrCallback);
 
     let memoryInstancePath;
