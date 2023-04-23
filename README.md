@@ -35,12 +35,14 @@ Download the latest release or:
 ### Chrome
 
 - Download [the latest release](https://github.com/Qwokka/Cetus/releases)
+    - Make sure you download the package release, not the *Source Code* release unless you know what you're doing.
 - Unpack zip file
 - Follow [these instructions](https://stackoverflow.com/a/24577660)
 
 ### Firefox
 
 - Download [the latest release](https://github.com/Qwokka/Cetus/releases)
+    - Make sure you download the package release, not the *Source Code* release unless you know what you're doing.
 - Unpack zip file
 - Follow [these instructions](https://www.ghacks.net/2015/12/24/temporary-add-on-loading-coming-to-firefox/)
 ## Credits
