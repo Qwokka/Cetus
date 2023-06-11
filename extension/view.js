@@ -32,11 +32,7 @@ document.getElementById('memViewNextPage').onclick = function(e) {
 	enableMemView(newAddress);
 };
 
-document.getElementById('restartBtn').onclick = function(e) {
-	e.preventDefault();
-
-	extension.sendBGMessage('restartSearch');
-
+const clearSearchForm = function() {
 	document.getElementById('resultsTitle').innerHTML = '';
 	document.getElementById('results').innerHTML = '';
 
@@ -48,7 +44,15 @@ document.getElementById('restartBtn').onclick = function(e) {
     enableSearchFormCompare();
     enableSearchFormAlignment();
 
-	e.target.disabled = true;
+    document.getElementById("restartBtn").disabled = true;
+}
+
+document.getElementById('restartBtn').onclick = function(e) {
+	e.preventDefault();
+
+	extension.sendBGMessage('restartSearch');
+
+    clearSearchForm();
 };
 
 // TODO We need to disable the comparison and type fields when doing a string/byte sequence search
@@ -550,9 +554,12 @@ const updateSearchForm = function(searchData) {
 		document.getElementById('searchUpper').value = searchUpper;
 	}
 
-	if (searchInProgress) {
-		updateSearchResults(resultCount, resultObject, searchType);
-	}
+    if (searchInProgress) {
+        updateSearchResults(resultCount, resultObject, searchType);
+    }
+    else {
+        clearSearchForm();
+    }
 };
 
 const updateStringSearchForm = function(stringData) {
@@ -872,6 +879,28 @@ const updateStackTraceTable = function(stackTraces) {
 
 	stackTraceMenu.appendChild(table);
 };
+
+const updateInstances = function(allInstances) {
+    const instanceSelector = document.getElementById("selectInstances");
+    instanceSelector.innerHTML = "";
+
+    for (let i = 0; i < allInstances.length; i++) {
+        const thisInstance = allInstances[i];
+
+        addNewInstanceSelector(thisInstance.url, thisInstance.id, thisInstance.selected);
+    }
+}
+
+const addNewInstanceSelector = function(instanceUrl, instanceId, selected = false) {
+    const instanceSelector = document.getElementById("selectInstances");
+
+    const newOption = document.createElement('option');
+    newOption.value = instanceId;
+    newOption.innerText = instanceUrl + ":" + instanceId;
+    newOption.selected = selected;
+
+    instanceSelector.appendChild(newOption);
+}
 
 Prism.hooks.add('before-highlight', function(env) {
 	env.code = env.element.innerText;
@@ -1340,3 +1369,9 @@ document.getElementById('toggleSpeedhack').onclick = function(e) {
         multiplier: multiplier
     });
 };
+
+document.getElementById("selectInstances").onchange = function(e) {
+    extension.sendBGMessage("instanceChange", {
+        id: e.target.value
+    });
+}

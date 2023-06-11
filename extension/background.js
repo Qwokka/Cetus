@@ -20,19 +20,24 @@ const FLAG_WATCH_WRITE  = 1 << 0;
 const FLAG_WATCH_READ   = 1 << 1;
 const FLAG_FREEZE       = 1 << 2;
 
-class BackgroundExtension {
-    constructor() {
-        this.bookmarks = {};
-        this._watchpoints = [];
+class ExtensionInstance {
+    constructor(instanceId, url) {
+        // The saved instance ID should only be used for actions triggered from the UI. Under other circumstances, it's possible
+        // for the saved instance ID is in the middle of an action.
+        this.instanceId = instanceId;
+        this.url = url;
 
-        this.searchMemType = null;
+        this.contentTab = null;
 
-        this.cetusUrl = null;
+        let _this = this;
+        chrome.tabs.query({ active: true }, function(tabs) {
+            // We do not query currentWindow because a detached dev tools panel may break
+            // this assumtion. See issue #16
+            _this.contentTab = tabs[0];
+        });
 
-        this._popupChannel = null;
-        this._popupConnect();
-
-        this.popupData = {
+        // This object is a serializable object containing all the data needed to be passed between the background page and the UI
+        this.instanceData = {
             initialized: false,
             url: null,
             bookmarks: {},
@@ -76,72 +81,16 @@ class BackgroundExtension {
             // FIXME This isn't used, but we should update the current tab for the popup view
             currentTab: "tabSearch",
         };
-
-        this.pendingSearch = false;
-        this.pendingStringSearch = false;
-        this.pendingFunctionIndex = null;
-    }
-
-    _popupConnect() {
-        if (typeof chrome.extension.onConnect !== "undefined") {
-            chrome.extension.onConnect.addListener(function(channel) {
-                bgExtension._popupChannel = channel;
-
-                bgExtension._popupChannel.onMessage.addListener(popupMessageListener);
-                bgExtension._popupChannel.onDisconnect.addListener(popupDisconnectListener);
-            });
-        }
-        else {
-            browser.runtime.onConnect.addListener(function(channel) {
-                bgExtension._popupChannel = channel;
-
-                bgExtension._popupChannel.onMessage.addListener(popupMessageListener);
-                bgExtension._popupChannel.onDisconnect.addListener(popupDisconnectListener);
-            });
-        }
-    }
-
-    popupRestore() {
-        this.sendPopupMessage("popupRestore", this.popupData);
-    }
-
-    sendPopupMessage(type, msgBody) {
-        if (this._popupChannel !== null) {
-            const msg = {
-                type: type
-            };
-
-            if (typeof msgBody !== "undefined") {
-                msg.body = msgBody;
-            }
-
-            // TODO Actually handle port closed error
-            try {
-                const msgStr = bigintJsonStringify(msg);
-
-                this._popupChannel.postMessage(msgStr);
-            }
-            catch (err) {
-                return;
-            }
-        }
-    }
-
-    passthruPopupMessage(msg) {
-        if (this._popupChannel !== null) {
-            const msgStr = bigintJsonStringify(msg);
-
-            this._popupChannel.postMessage(msgStr);
-        }
     }
 
     reset() {
-        this.popupData = {
+        this.instanceData = {
             initialized: false,
             url: null,
             bookmarks: {},
             symbols: {},
             stackTraces: [],
+            instances: [],
             searchForm: {
                 value: "",
                 comparison: "eq",
@@ -176,9 +125,24 @@ class BackgroundExtension {
             },
             currentTab: "tabSearch",
         };
-
-        this.popupRestore();
     }
+
+    sendContentMessage(type, msgBody) {
+        const msg = {
+            id: this.instanceId.split(":")[1],
+            type: type,
+            body: msgBody
+        };
+
+        try {
+            chrome.tabs.sendMessage(this.contentTab.id, msg);
+        }
+        catch (e) {
+            alert(e.toString());
+            // TODO Handle tab closed
+            return;
+        }
+    };
 
     addBookmark(memAddr, memType) {
         this.bookmarks[memAddr] = {
@@ -206,16 +170,16 @@ class BackgroundExtension {
             bookmarks: this.bookmarks,
         };
 
-        this.sendPopupMessage("updateBookmarks", msgBody);
+        this.sendPopupMessage(this.instanceId, "updateBookmarks", msgBody);
     }
 
     updateMemView() {
         const msgBody = {
-            data: this.popupData.memoryViewer.memData,
-            startAddress: this.popupData.memoryViewer.startAddress
+            data: this.instanceData.memoryViewer.memData,
+            startAddress: this.instanceData.memoryViewer.startAddress
         };
 
-        this.sendPopupMessage("updateMemView", msgBody);
+        this.sendPopupMessage(this.instanceId, "updateMemView", msgBody);
     }
 
     // Updates the flags of a watchpoint if one already exists for this address
@@ -310,7 +274,7 @@ class BackgroundExtension {
                 msgBody.flags = 0;
             }
 
-            sendContentMessage("updateWatch", msgBody);
+            this.sendContentMessage("updateWatch", msgBody);
         }
     }
 
@@ -328,10 +292,153 @@ class BackgroundExtension {
 
     addStackTrace(newTrace) {
         // This hopefully shouldn't happen anymore but let's be sure
-        if (typeof this.popupData.stackTraces === "undefined") {
-            this.popupData.stackTraces = [];
+        if (typeof this.instanceData.stackTraces === "undefined") {
+            this.instanceData.stackTraces = [];
         }
-        this.popupData.stackTraces.push(newTrace);
+        this.instanceData.stackTraces.push(newTrace);
+    }
+}
+
+class BackgroundExtension {
+    constructor() {
+        this.bookmarks = {};
+        this._watchpoints = [];
+        this.instances = [];
+        this.instanceId = null;
+
+        // We do not need a separate popupChannel for each instance because they all connect to the same popup window
+        this._popupChannel = null;
+        this._popupConnect();
+
+        this.searchMemType = null;
+
+        this.pendingSearch = false;
+        this.pendingStringSearch = false;
+        this.pendingFunctionIndex = null;
+    }
+
+    _popupConnect() {
+        if (typeof chrome.extension.onConnect !== "undefined") {
+            chrome.extension.onConnect.addListener(function(channel) {
+                bgExtension._popupChannel = channel;
+
+                bgExtension._popupChannel.onMessage.addListener(popupMessageListener);
+                bgExtension._popupChannel.onDisconnect.addListener(popupDisconnectListener);
+            });
+        }
+        else {
+            browser.runtime.onConnect.addListener(function(channel) {
+                bgExtension._popupChannel = channel;
+
+                bgExtension._popupChannel.onMessage.addListener(popupMessageListener);
+                bgExtension._popupChannel.onDisconnect.addListener(popupDisconnectListener);
+            });
+        }
+    }
+
+
+    popupRestore() {
+        const currentInstance = this.currentInstance();
+
+        const popupData = {
+            instances: this.getInstanceData()
+        }
+
+        if (currentInstance !== null) {
+            popupData.instanceData = currentInstance.instanceData;
+        }
+
+        this.sendPopupMessage(this.instanceId, "popupRestore", popupData);
+    }
+
+    sendPopupMessage(instanceId, type, msgBody) {
+        if (this.getInstance(instanceId) === null) {
+            return;
+        }
+
+        if (this._popupChannel !== null) {
+            const msg = {
+                type: type,
+                id: instanceId
+            };
+
+            if (typeof msgBody !== "undefined") {
+                msg.body = msgBody;
+            }
+
+            // TODO Actually handle port closed error
+            try {
+                const msgStr = bigintJsonStringify(msg);
+
+                this._popupChannel.postMessage(msgStr);
+            }
+            catch (err) {
+                return;
+            }
+        }
+    }
+
+    passthruPopupMessage(msg) {
+        if (this._popupChannel !== null) {
+            const msgStr = bigintJsonStringify(msg);
+
+            this._popupChannel.postMessage(msgStr);
+        }
+    }
+
+    addInstance(instanceId, pageUrl) {
+        if (this.getInstance(instanceId) !== null) {
+            return;
+        }
+
+        // Don't change the selected instance ID unless no ID is selected
+        if (this.instanceId === null) {
+            this.instanceId = instanceId;
+        }
+
+        const newInstance = new ExtensionInstance(instanceId, pageUrl);
+        this.instances.push(newInstance);
+        return newInstance;
+    }
+
+    getInstance(instanceId) {
+        for (let i = 0; i < this.instances.length; i++) {
+            const thisInstance = this.instances[i];
+
+            if (thisInstance.instanceId === instanceId) {
+                return thisInstance;
+            }
+        }
+
+        return null;
+    }
+
+    currentInstance() {
+        return this.getInstance(this.instanceId);
+    }
+
+    getInstanceData() {
+        const result = [];
+
+        for (let i = 0; i < this.instances.length; i++) {
+            const thisInstance = this.instances[i];
+
+            const instanceData = {
+                id: thisInstance.instanceId,
+                url: thisInstance.url
+            }
+
+            if (thisInstance.instanceId === this.instanceId) {
+                instanceData.selected = true;
+            }
+            else {
+                instanceData.selected = false;
+            }
+
+            result.push(instanceData);
+        }
+
+        return result;
     }
 }
 
@@ -343,6 +450,8 @@ const popupMessageListener = function(msg) {
     if (typeof msgType !== "string") {
         return;
     }
+
+    const currentInstance = bgExtension.currentInstance();
 
     switch (msgType) {
         case "popupConnected":
@@ -359,14 +468,14 @@ const popupMessageListener = function(msg) {
             const searchLower = msgBody.lower;
             const searchUpper = msgBody.upper;
 
-            bgExtension.popupData.searchForm.inProgress = true;
+            currentInstance.instanceData.searchForm.inProgress = true;
 
-            bgExtension.popupData.searchForm.value = searchValue;
-            bgExtension.popupData.searchForm.valueType = searchMemType;
-            bgExtension.popupData.searchForm.memAlign = searchMemAlign;
-            bgExtension.popupData.searchForm.comparison = searchComp;
-            bgExtension.popupData.searchForm.rangeLower = searchLower;
-            bgExtension.popupData.searchForm.rangeUpper = searchUpper;
+            currentInstance.instanceData.searchForm.value = searchValue;
+            currentInstance.instanceData.searchForm.valueType = searchMemType;
+            currentInstance.instanceData.searchForm.memAlign = searchMemAlign;
+            currentInstance.instanceData.searchForm.comparison = searchComp;
+            currentInstance.instanceData.searchForm.rangeLower = searchLower;
+            currentInstance.instanceData.searchForm.rangeUpper = searchUpper;
 
             forwardMsg.param = searchValue;
             forwardMsg.memType = searchMemType;
@@ -375,18 +484,18 @@ const popupMessageListener = function(msg) {
             forwardMsg.lower = searchLower;
             forwardMsg.upper = searchUpper;
 
-            sendContentMessage("search", forwardMsg);
+            currentInstance.sendContentMessage("search", forwardMsg);
 
             bgExtension.pendingSearch = true;
             
             break;
         case "restartSearch":
-            bgExtension.popupData.searchForm.inProgress = false;
+            currentInstance.instanceData.searchForm.inProgress = false;
 
-            bgExtension.popupData.searchForm.results.count = 0;
-            bgExtension.popupData.searchForm.results.object = {};
+            currentInstance.instanceData.searchForm.results.count = 0;
+            currentInstance.instanceData.searchForm.results.object = {};
 
-            sendContentMessage("restartSearch");
+            currentInstance.sendContentMessage("restartSearch");
 
             break;
         case "addBookmark":
@@ -419,9 +528,9 @@ const popupMessageListener = function(msg) {
                 memType: modifyMemType
             };
 
-            sendContentMessage("modifyMemory", newMsgBody);
+            currentInstance.sendContentMessage("modifyMemory", newMsgBody);
 
-            const bookmark = bgExtension.bookmarks[modifyMemAddr];
+            const bookmark = bgExtension.currentInstance().bookmarks[modifyMemAddr];
 
             if (typeof bookmark !== "object") {
                 return;
@@ -429,14 +538,14 @@ const popupMessageListener = function(msg) {
 
             bookmark.value = modifyMemValue;
 
-            bgExtension.bookmarks[modifyMemAddr] = bookmark;
+            bgExtension.currentInstance().bookmarks[modifyMemAddr] = bookmark;
 
             const bookmarkFlags = bookmark.flags;
 
             // If we're updating the value of a bookmark, we also want to update
             // its associated watchpoint to the same value
             if (bookmarkFlags) {
-                bgExtension.updateWatchpoint(modifyMemAddr, modifyMemValue, 0);
+                bgExtension.currentInstance().updateWatchpoint(modifyMemAddr, modifyMemValue, 0);
             }
 
             break;
@@ -446,7 +555,7 @@ const popupMessageListener = function(msg) {
 
             const flags = msgBody.flags;
 
-            bgExtension.updateWatchpoint(watchMemAddr, watchMemValue, flags);
+            bgExtension.currentInstance().updateWatchpoint(watchMemAddr, watchMemValue, flags);
 
             break;
         case "stringSearch":
@@ -455,15 +564,15 @@ const popupMessageListener = function(msg) {
             const strUpper = msgBody.upper;
             const strMin = msgBody.minLength;
 
-            sendContentMessage("stringSearch", {
+            currentInstance.sendContentMessage("stringSearch", {
                 strType: strType,
                 lower: strLower,
                 upper: strUpper,
                 minLength: strMin,
             });
 
-            bgExtension.popupData.stringForm.strType = strType;
-            bgExtension.popupData.stringForm.strMinLen = strMin;
+            bgExtension.currentInstance().instanceData.stringForm.strType = strType;
+            bgExtension.currentInstance().instanceData.stringForm.strMinLen = strMin;
 
             bgExtension.pendingStringSearch = true;
 
@@ -479,44 +588,54 @@ const popupMessageListener = function(msg) {
             bgExtension.pendingFunctionIndex = funcIndex;
 
             if (typeof lineNum === "number") {
-                sendContentMessage("queryFunction", {
+                currentInstance.sendContentMessage("queryFunction", {
                     index: funcIndex,
                     lineNum: lineNum
                 });
             }
             else {
-                sendContentMessage("queryFunction", {
+                currentInstance.sendContentMessage("queryFunction", {
                     index: funcIndex
                 });
             }
             break;
         case "shToggle":
-            const shNewEnabled = !bgExtension.popupData.speedhack.enabled;
+            const shNewEnabled = !bgExtension.currentInstance().instanceData.speedhack.enabled;
 
-            bgExtension.popupData.speedhack.enabled = shNewEnabled;
+            bgExtension.currentInstance().instanceData.speedhack.enabled = shNewEnabled;
 
             if (shNewEnabled) {
                 const shMultiplier = msgBody.multiplier;
 
-                bgExtension.popupData.speedhack.multiplier = shMultiplier;
+                bgExtension.currentInstance().instanceData.speedhack.multiplier = shMultiplier;
 
-                sendContentMessage("shEnable", {
+                currentInstance.sendContentMessage("shEnable", {
                     multiplier: shMultiplier
                 });
             }
             else {
                 // We "disable" the speedhack by setting its multiplier to 1x
                 // Otherwise we would potentially travel "back in time"
-                sendContentMessage("shEnable", {
+                currentInstance.sendContentMessage("shEnable", {
                     multiplier: 1
                 });
             }
 
             break;
         case "memToggle":
-            bgExtension.popupData.memoryViewer.enabled = msgBody.enabled;
-            bgExtension.popupData.memoryViewer.startAddress = msgBody.startAddress;
+            bgExtension.currentInstance().instanceData.memoryViewer.enabled = msgBody.enabled;
+            bgExtension.currentInstance().instanceData.memoryViewer.startAddress = msgBody.startAddress;
 
+            break;
+        case "instanceChange":
+            const newInstance = msgBody.id;
+
+            if (bgExtension.getInstance(newInstance) === null) {
+                return;
+            }
+
+            bgExtension.instanceId = newInstance;
+            bgExtension.popupRestore();
             break;
     }
 };
@@ -529,22 +648,30 @@ bgExtension = new BackgroundExtension();
 
 // This listener receives commands directly from the page
 // As such, all inputs should be treated as untrusted
-chrome.runtime.onMessage.addListener(function(msgRaw) {
+chrome.runtime.onMessage.addListener(function(msgRaw, msgSender) {
     const msg = bigintJsonParse(msgRaw);
 
     const msgType = msg.type;
     const msgBody = msg.body;
 
+    const msgSource = msgSender.documentId + ":" + msg.id;
+
     if (typeof msgType !== "string") {
         return true;
     }
 
+    let targetInstance;
+
+    if (msgType !== "init") {
+        targetInstance = bgExtension.getInstance(msgSource);
+
+        if (targetInstance === null) {
+            return;
+        }
+    }
+
     switch (msgType) {
         case "init":
-            if (bgExtension.popupData.initialized) {
-                return;
-            }
-
             const pageUrl = msgBody.url;
             const symbols = msgBody.symbols;
 
@@ -556,13 +683,15 @@ chrome.runtime.onMessage.addListener(function(msgRaw) {
                 return;
             }
 
-            bgExtension.popupData.initialized = true;
-            bgExtension.popupData.url = pageUrl;
-            bgExtension.popupData.symbols = symbols;
+            const newInstance = bgExtension.addInstance(msgSource, pageUrl);
 
-            bgExtension.sendPopupMessage("init", {
+            newInstance.instanceData.initialized = true;
+            newInstance.instanceData.url = pageUrl;
+            newInstance.instanceData.symbols = symbols;
+
+            bgExtension.sendPopupMessage(msgSource, "init", {
                 url: pageUrl,
-                symbols: symbols
+                symbols: symbols,
             });
 
             break;
@@ -570,8 +699,11 @@ chrome.runtime.onMessage.addListener(function(msgRaw) {
             const bytesAddress = msgBody.address;
             const bytesValue = msgBody.value;
 
-            bgExtension.popupData.memoryViewer.memData = bytesValue;
-            bgExtension.updateMemView();
+            targetInstance.instanceData.memoryViewer.memData = bytesValue;
+
+            if (targetInstance.instanceId == this.instanceId) {
+                bgExtension.updateMemView();
+            }
 
             break;
         case "queryMemoryResult":
@@ -616,10 +748,10 @@ chrome.runtime.onMessage.addListener(function(msgRaw) {
                 }
             }
 
-            bgExtension.popupData.searchForm.results.count = resultCount;
-            bgExtension.popupData.searchForm.results.object = resultObject;
+            targetInstance.instanceData.searchForm.results.count = resultCount;
+            targetInstance.instanceData.searchForm.results.object = resultObject;
 
-            bgExtension.popupData.searchForm.valueType = resultMemType;
+            targetInstance.instanceData.searchForm.valueType = resultMemType;
 
             bgExtension.passthruPopupMessage(msg);
 
@@ -656,8 +788,8 @@ chrome.runtime.onMessage.addListener(function(msgRaw) {
                 }
             }
 
-            bgExtension.popupData.stringForm.results.count = count;
-            bgExtension.popupData.stringForm.results.object = resultObj;
+            targetInstance.instanceData.stringForm.results.count = count;
+            targetInstance.instanceData.stringForm.results.object = resultObj;
 
             bgExtension.passthruPopupMessage(msg);
 
@@ -687,14 +819,14 @@ chrome.runtime.onMessage.addListener(function(msgRaw) {
             const lineNum = msgBody.lineNum;
 
             if (typeof lineNum === "number") {
-                bgExtension.sendPopupMessage("queryFunctionResult", {
+                bgExtension.sendPopupMessage(msgSource, "queryFunctionResult", {
                     funcIndex: funcIndex,
                     bytes: funcBytes,
                     lineNum: lineNum
                 });
             }
             else {
-                bgExtension.sendPopupMessage("queryFunctionResult", {
+                bgExtension.sendPopupMessage(msgSource, "queryFunctionResult", {
                     funcIndex: funcIndex,
                     bytes: funcBytes
                 });
@@ -750,15 +882,15 @@ chrome.runtime.onMessage.addListener(function(msgRaw) {
 
             bgExtension.addStackTrace(savedTrace);
 
-            bgExtension.sendPopupMessage("watchPointHit", {
+            bgExtension.sendPopupMessage(msgSource, "watchPointHit", {
                 stackTrace: savedTrace
             });
 
             break;
         case "reset":
-            bgExtension.reset();
+            targetInstance.reset();
 
-            bgExtension.sendPopupMessage("reset");
+            bgExtension.sendPopupMessage(msgSource, "reset");
 
             break;
     }
@@ -767,10 +899,16 @@ chrome.runtime.onMessage.addListener(function(msgRaw) {
 });
 
 setInterval(function() {
-    for (const address of Object.keys(bgExtension.bookmarks)) {
-        const memType = bgExtension.bookmarks[address].memType;
+    const currentInstance = bgExtension.currentInstance();
 
-        sendContentMessage("queryMemory", {
+    if (currentInstance === null) {
+        return;
+    }
+
+    for (const address of Object.keys(currentInstance.instanceData.bookmarks)) {
+        const memType = currentInstance.instanceData.bookmarks[address].memType;
+
+        currentInstance.sendContentMessage("queryMemory", {
             address: parseInt(address),
             memType: memType,
         });
@@ -778,9 +916,15 @@ setInterval(function() {
 }, 1000);
 
 setInterval(function() {
-	if (bgExtension.popupData.memoryViewer.enabled) {
+    const currentInstance = bgExtension.currentInstance();
+
+    if (currentInstance === null) {
+        return;
+    }
+
+	if (currentInstance.instanceData.memoryViewer.enabled) {
 		sendContentMessage("queryMemoryBytes", {
-			address: bgExtension.popupData.memoryViewer.startAddress,
+			address: bgExtension.instanceData.memoryViewer.startAddress,
 		});
 	}
 }, 250);

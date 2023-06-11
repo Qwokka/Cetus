@@ -14,16 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-if (typeof cetus === "undefined") {
-    cetus = null;
-}
-
 // Inform the extension when we leave the page
 window.onbeforeunload = function() {
     // Don't bother sending a reset message if Cetus didn't initialize.
     // This helps keep unrelated tabs from resetting the extension
-    if (cetus !== null) {
-        sendExtensionMessage("reset");
+    if (cetusInstances !== null) {
+        cetusInstances.closeAll();
     }
 };
 
@@ -793,16 +789,16 @@ const getMemoryFromObject = function(inObject, memoryDescriptor) {
 };
 
 // Callback that is executed when a read watchpoint is hit
-const readWatchCallback = function() {
-    const stackTrace = StackTrace.get().then(stacktraceCallback);
+const readWatchCallback = function(cetusIdentifier) {
+    const stackTrace = StackTrace.get().then(function(stackTrace) { stacktraceCallback(cetusIdentifier, stackTrace) });
 };
 
 // Callback that is executed when a write watchpoint is hit
-const writeWatchCallback = function() {
-    const stackTrace = StackTrace.get().then(stacktraceCallback);
+const writeWatchCallback = function(cetusIdentifier) {
+    const stackTrace = StackTrace.get().then(function(stackTrace) { stacktraceCallback(cetusIdentifier, stackTrace) });
 };
 
-const stacktraceCallback = function(stackFrames) {
+const stacktraceCallback = function(cetusIdentifier, stackFrames) {
     const trimmedStackFrame = [];
 
     let watchPointsFound = 0;
@@ -851,7 +847,7 @@ const stacktraceCallback = function(stackFrames) {
         stackTrace: trimmedStackFrame
     };
 
-    sendExtensionMessage("watchPointHit", msgBody);
+    cetusInstances.get(cetusIdentifier).sendExtensionMessage("watchPointHit", msgBody);
 };
 
 const oldWebAssemblyInstantiate = WebAssembly.instantiate;
@@ -932,7 +928,9 @@ const webAssemblyInstantiateHook = function(inObject, importObject = {}) {
                 colorError("WebAssembly.instantiate() failed to retrieve a WebAssembly.Memory object");
             }
 
-            cetus = new Cetus({
+            const cetusIdentifier = cetusInstances.reserveIdentifier();
+
+            cetusInstances.newInstance(cetusIdentifier, {
                 memory: memoryInstance,
                 watchpointExports: [instance.exports.addWatch],
                 buffer: instrumentedBuffer,
@@ -1005,7 +1003,9 @@ const webAssemblyInstanceProxy = new Proxy(WebAssembly.Instance, {
 
         const result = new target(module, importObject);
 
-        cetus = new Cetus({
+        const cetusIdentifier = cetusInstances.reserveIdentifier();
+
+        cetusInstances.newInstance(cetusIdentifier, {
             memory: memoryInstance,
             watchpointExports: [result.exports.addWatch],
             buffer: instrumentResults.instrumentedBuffer,
@@ -1040,8 +1040,10 @@ const webAssemblyInstantiateStreamingHook = function(sourceObj, importObject = {
         importObject.env = {};
     }
 
-    importObject.env.readWatchCallback = readWatchCallback;
-    importObject.env.writeWatchCallback = writeWatchCallback;
+    const cetusIdentifier = cetusInstances.reserveIdentifier();
+
+    importObject.env.readWatchCallback = function() { readWatchCallback(cetusIdentifier) };
+    importObject.env.writeWatchCallback = function() { writeWatchCallback(cetusIdentifier) };
 
     const wail = new WailParser();
 
@@ -1077,7 +1079,9 @@ const webAssemblyInstantiateStreamingHook = function(sourceObj, importObject = {
                     colorError("WebAssembly.instantiateStreaming() failed to retrieve a WebAssembly.Memory object");
                 }
 
-                cetus = new Cetus({
+                const cetusIdentifier = cetusInstances.reserveIdentifier();
+
+                cetusInstances.newInstance(cetusIdentifier, {
                     memory: memoryInstance,
                     watchpointExports: [instanceObject.instance.exports.addWatch],
                     buffer: instrumentedBuffer,

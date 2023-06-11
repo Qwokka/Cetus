@@ -50,27 +50,6 @@ const formatInteger = function(value) {
     return value;
 };
 
-// TODO Move to extension class
-const sendContentMessage = function(type, msgBody) {
-    const msg = {
-        type: type,
-        body: msgBody
-    };
-
-    // We do not query currentWindow because a detached dev tools panel may break
-    // this assumtion. See issue #16
-	chrome.tabs.query({ active: true }, function(tabs) {
-		const activeTab = tabs[0];
-        try {
-            chrome.tabs.sendMessage(activeTab.id, msg);
-        }
-        catch (e) {
-            // TODO Handle tab closed
-            return;
-        }
-	});
-};
-
 const storageSet = function(valueObj) {
     chrome.storage.local.set(valueObj);
 };

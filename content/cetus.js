@@ -22,8 +22,56 @@ const MAX_WATCHPOINTS   = 1;
 
 const MAX_SEARCH_RESULTS = 1000;
 
+class CetusInstanceContainer {
+    constructor() {
+        // TODO Move this to extension options page
+        this.debugLevel = 0;
+
+        this._instances = [];
+        this.speedhack = new SpeedHack(1);
+    }
+
+    reserveIdentifier() {
+        return this._instances.push(null) - 1;
+    }
+
+    newInstance(identifier, options) {
+        if (this._instances[identifier] !== null) {
+            throw new Error("Attempted to use an invalid identifier");
+        }
+
+        const newInstance = new Cetus(identifier, options);
+        this._instances[identifier] = newInstance;
+    }
+
+    _validateIdentifier(identifier) {
+        if (!this._instances[identifier] instanceof Cetus) {
+            throw new Error("Requested invalid identifier " + identifier + " in CetusInstanceContainer.get()");
+        }
+    }
+
+    get(identifier) {
+        this._validateIdentifier(identifier);
+
+        return this._instances[identifier];
+    }
+
+    close(identifier) {
+        this._validateIdentifier(identifier);
+
+        this._instances[identifier].sendExtensionMessage("reset");
+    }
+
+    closeAll() {
+        for (let i = 0; i < this._instances.length; i++) {
+            this.close(i);
+        }
+    }
+}
+
 class Cetus {
-    constructor(env) {
+    constructor(identifier, env) {
+        this.identifier = identifier;
         this.watchpointExports = env.watchpointExports;
 
         if (!(env.memory instanceof WebAssembly.Memory)) {
@@ -44,21 +92,32 @@ class Cetus {
         this._searchSubset = {};
         this._savedMemory  = null;
 
-        this.speedhack = new SpeedHack(1);
-
-        // TODO Move this to extension options page
-        this.debugLevel = 0;
-
-        if (this.debugLevel >= 1) {
+        if (cetusInstances.debugLevel >= 1) {
             colorLog("constructor: Cetus initialized");
         }
 
         // Inform the extension that we have initialized
-        sendExtensionMessage("init", {
+        this.sendExtensionMessage("init", {
             url: (window.location.host + window.location.pathname),
             symbols: this._symbols
         });
     }
+
+    sendExtensionMessage(type, msg) {
+        const msgBody = {
+            id: this.identifier,
+            type: type,
+            body: msg
+        };
+
+        if (cetusInstances !== null && cetusInstances.debugLevel >= 2) {
+            colorLog("Sending message to extension: " + bigintJsonStringify(msgBody));
+        }
+
+        const evt = new CustomEvent("cetusMsgIn", { detail: bigintJsonStringify(msgBody) } );
+
+        window.dispatchEvent(evt);
+    };
 
     createSearchMemory(memTypeStr, memAligned = true) {
         if (memAligned) {
@@ -147,7 +206,7 @@ class Cetus {
         this._searchSubset = {};
         this._savedMemory = null;
 
-        if (this.debugLevel >= 1) {
+        if (cetusInstances.debugLevel >= 1) {
             colorLog("restartSearch: Search restarted");
         }
     }
@@ -188,7 +247,7 @@ class Cetus {
                     currentValue = this._queryMemoryUnalignedQuick(entry, memType);
                 }
 
-                if (this.debugLevel >= 3) {
+                if (cetusInstances.debugLevel >= 3) {
                     colorLog("_compare: Looping subset search. Entry: " + entry + "  Value: " + currentValue);
                 }                
                 
@@ -366,7 +425,7 @@ class Cetus {
                                           upperBoundAddr);
         }
 
-        if (this.debugLevel >= 1) {
+        if (cetusInstances.debugLevel >= 1) {
             colorLog("search: exiting search");
         }
 
@@ -496,7 +555,7 @@ class Cetus {
             throw new Error("Invalid memory type in addBookmark()");
         }
 
-        sendExtensionMessage("addBookmark", {
+        this.sendExtensionMessage("addBookmark", {
             address: memAddr,
             memType: memType
         });
@@ -549,7 +608,7 @@ class Cetus {
 
         let current = [];
 
-        if (this.debugLevel >= 1) {
+        if (cetusInstances.debugLevel >= 1) {
             colorLog("asciiStrings: entering ASCII string search");
         }
    
@@ -570,7 +629,7 @@ class Cetus {
 
                 results[i - current.length] = thisString;
 
-                if (this.debugLevel >= 3) {
+                if (cetusInstances.debugLevel >= 3) {
                     colorLog("asciiStrings: string found: " + thisString);
                 }
             }
@@ -578,7 +637,7 @@ class Cetus {
             current = [];
         }
 
-        if (this.debugLevel >= 1) {
+        if (cetusInstances.debugLevel >= 1) {
             colorLog("asciiStrings: exiting ASCII string search");
         }
 
@@ -607,7 +666,7 @@ class Cetus {
 
         let current = [];
 
-        if (this.debugLevel >= 1) {
+        if (cetusInstances.debugLevel >= 1) {
             colorLog("unicodeStrings: entering UNICODE string search");
         }
     
@@ -629,7 +688,7 @@ class Cetus {
                 if (thisString.length >= minLength) {
                     results[i - current.length] = thisString;
 
-                    if (this.debugLevel >= 3) {
+                    if (cetusInstances.debugLevel >= 3) {
                         colorLog("unicodeStrings: string found: " + thisString);
                     }
                 }    
@@ -638,7 +697,7 @@ class Cetus {
             current = [];
         }
 
-        if (this.debugLevel >= 1) {
+        if (cetusInstances.debugLevel >= 1) {
             colorLog("unicodeStrings: exiting UNICODE string search");
         }
 
@@ -649,7 +708,7 @@ class Cetus {
     }
 
     bytesSequence(bytesSeq) {
-        if (this.debugLevel >= 1) {
+        if (cetusInstances.debugLevel >= 1) {
             colorLog("bytesSequence: entering bytes sequence search with parameter " + bytesSeq);
         }
 
@@ -680,7 +739,7 @@ class Cetus {
                 results.push(i - bytesSeq.length);
                 match = 0;
 
-                if (this.debugLevel >= 3) {
+                if (cetusInstances.debugLevel >= 3) {
                     colorLog("bytesSequence: sequence found: " + bytesSeq);
                 }
             } else {
@@ -688,7 +747,7 @@ class Cetus {
             }
         }
 
-        if (this.debugLevel >= 1) {
+        if (cetusInstances.debugLevel >= 1) {
             colorLog("bytesSequence: exiting bytes sequence search");
         }
 
@@ -708,7 +767,7 @@ class SpeedHack {
             Date.now = speedHackDateNow;
         }
         else {
-            this.oldDn = cetus.speedhack.oldDn;
+            this.oldDn = cetusInstances.speedhack.oldDn;
         }
 
         if (performance.now !== speedHackPerformanceNow) {
@@ -716,7 +775,7 @@ class SpeedHack {
             performance.now = speedHackPerformanceNow;
         }
         else {
-            this.oldPn = cetus.speedhack.oldPn;
+            this.oldPn = cetusInstances.speedhack.oldPn;
         }
 
         this.startDn = this.oldDn.call(Date);
@@ -725,7 +784,7 @@ class SpeedHack {
 }
 
 const speedHackDateNow = function() {
-    const sh = cetus.speedhack;
+    const sh = cetusInstances.speedhack;
 
     const real = sh.oldDn.call(Date);
     const elapsed = (real - sh.startDn) * sh.multiplier;
@@ -734,7 +793,7 @@ const speedHackDateNow = function() {
 };
 
 const speedHackPerformanceNow = function() {
-    const sh = cetus.speedhack;
+    const sh = cetusInstances.speedhack;
 
     const real = sh.oldPn.call(performance);
     const elapsed = (real - sh.startPn) * sh.multiplier;
@@ -763,25 +822,9 @@ const colorError = function(msg) {
         "color: #ff2424; background: #fff; padding:5px 0;");
 };
 
-// Event will be captured by content.js and passed along to the extension
-const sendExtensionMessage = function(type, msg) {
-    const msgBody = {
-        type: type,
-        body: msg
-    };
-
-    if (cetus !== null && cetus.debugLevel >= 2) {
-        colorLog("Sending message to extension: " + bigintJsonStringify(msgBody));
-    }
-
-    const evt = new CustomEvent("cetusMsgIn", { detail: bigintJsonStringify(msgBody) } );
-
-    window.dispatchEvent(evt);
-};
-
 // TODO Validation on all these messages
 window.addEventListener("cetusMsgOut", function(msgRaw) {
-    if (cetus == null) {
+    if (cetusInstances == null) {
         return;
     }
 
@@ -794,7 +837,13 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
         return;
     }
     
-    if (cetus !== null && cetus.debugLevel >= 2) {
+    const cetus = cetusInstances.get(msg.id);
+
+    if (typeof cetus === "undefined") {
+        return;
+    }
+
+    if (cetusInstances !== null && cetusInstances.debugLevel >= 2) {
         colorLog("addEventListener: event received: " + JSON.stringify(msg));
     }
 
@@ -802,7 +851,7 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
         case "queryMemoryBytes":
             const queryBytesResult = cetus.queryMemoryChunk(msgBody.address, 512);
 
-            sendExtensionMessage("queryMemoryBytesResult", {
+            cetus.sendExtensionMessage("queryMemoryBytesResult", {
                 address: msgBody.address,
                 value: queryBytesResult,
             });
@@ -818,7 +867,7 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
 
             const queryResult = cetus.queryMemory(queryAddr, queryMemType);
 
-            sendExtensionMessage("queryMemoryResult", {
+            cetus.sendExtensionMessage("queryMemoryResult", {
                 address: queryAddr,
                 value: queryResult,
                 memType: queryMemType
@@ -872,7 +921,7 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
                 searchResults = subset;
             }
 
-            sendExtensionMessage("searchResult", {
+            cetus.sendExtensionMessage("searchResult", {
                 count: searchResultsCount,
                 results: searchResults,
                 memType: searchMemType,
@@ -917,7 +966,7 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
                 strResults = strSubset;
             }
 
-            sendExtensionMessage("stringSearchResult", {
+            cetus.sendExtensionMessage("stringSearchResult", {
                 count: strResultsCount,
                 results: strResults,
             });
@@ -970,7 +1019,7 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
             const funcBytes = cetus.queryFunction(funcIndex);
 
             if (typeof funcBytes !== "undefined") {
-                sendExtensionMessage("queryFunctionResult", {
+                cetus.sendExtensionMessage("queryFunctionResult", {
                     funcIndex: funcIndex,
                     bytes: funcBytes,
                     lineNum: lineNum
@@ -992,3 +1041,7 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
             break;
     }
 }, false);
+
+if (typeof cetusInstances === "undefined") {
+    cetusInstances = new CetusInstanceContainer();
+}

@@ -162,10 +162,28 @@ html {
 	background: var(--background);
 }
 
-.tabs {
+.select {
 	position: fixed;
 	z-index: 5;
 	top: 0;
+	left: 0;
+	width: 100%;
+	background: var(--lightBackground);
+	padding: 0 16px;
+    outline: none;
+}
+
+.select select {
+    -moz-appearance: none;
+    -webkit-appearance: none;
+    appearance: none;
+    text-decoration: none;
+}
+
+.tabs {
+	position: fixed;
+	z-index: 5;
+	top: 10;
 	left: 0;
 	width: 100%;
 	background: var(--lightBackground);

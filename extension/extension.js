@@ -25,10 +25,10 @@ const FLAG_FREEZE       = 1 << 2;
 class PopupExtension {
     constructor() {
         if (typeof chrome.extension.connect !== "undefined") {
-            this._bgChannel = chrome.extension.connect({ name: "Background Page"});
+            this._bgChannel = chrome.extension.connect({ name: "Cetus Background Page"});
         }
         else {
-            this._bgChannel = browser.runtime.connect({ name: "Background Page"});
+            this._bgChannel = browser.runtime.connect({ name: "Cetus Background Page"});
         }
         this._bgChannel.onMessage.addListener(bgMessageListener);
 
@@ -40,6 +40,8 @@ class PopupExtension {
         this._stackTraces = [];
 
         this.symbols = {};
+
+        this.unlocked = false;
     }
 
     sendBGMessage(type, msgBody) {
@@ -67,6 +69,7 @@ class PopupExtension {
         overlay.classList.remove("overlay");
         const button = document.getElementById("overlayLoadPatchModalButton");
         button.style.display = "none";
+        this.unlocked = true;
     }
 
     reset() {
@@ -92,6 +95,8 @@ class PopupExtension {
         closeLoadPatchModal();
         closeSavePatchModal();
         closeStackTraceModal();
+
+        this.unlocked = false;
     }
 
     addBookmark(memAddr, memType) {
@@ -309,28 +314,43 @@ const bgMessageListener = function(msgRaw) {
 
     const type = msg.type;
     const msgBody = msg.body;
+    const instanceId = msg.id;
 
     switch (type) {
         case "init":
-            extension.unlock();
+            if (!extension.unlocked) {
+                extension.unlock();
 
-            extension.url = msgBody.url;
-            extension.symbols = msgBody.symbols;
+                extension.url = msgBody.url;
+                extension.symbols = msgBody.symbols;
+
+                updateInstances({
+                    url: msgBody.url,
+                    id: instanceId,
+                });
+            }
+            else {
+                addNewInstanceSelector(msgBody.url, instanceId);
+            }
 
             break;
         case "popupRestore":
-            if (msgBody.initialized) {
+            if (!extension.unlocked) {
                 extension.unlock();
             }
 
-            extension.url = msgBody.url;
-            extension.symbols = msgBody.symbols;
-            extension.searchMemType = msgBody.searchForm.valueType;
+            const instanceData = msgBody.instanceData;
 
-            updateSearchForm(msgBody.searchForm);
-            updateStringSearchForm(msgBody.stringForm);
-            updateSpeedhackForm(msgBody.speedhack);
-            updateStackTraceTable(msgBody.stackTraces);
+            extension.url = instanceData.url;
+            extension.symbols = instanceData.symbols;
+            extension.searchMemType = instanceData.searchForm.valueType;
+
+            updateSearchForm(instanceData.searchForm);
+            updateStringSearchForm(instanceData.stringForm);
+            updateSpeedhackForm(instanceData.speedhack);
+            updateStackTraceTable(instanceData.stackTraces);
+
+            updateInstances(msgBody.instances);
 
             break;
         case "searchResult":
