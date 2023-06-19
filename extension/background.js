@@ -89,6 +89,7 @@ class ExtensionInstance {
             initialized: false,
             url: null,
             bookmarks: {},
+            watchpoints: [],
             symbols: {},
             stackTraces: [],
             instances: [],
