@@ -18,14 +18,19 @@ const FLAG_WATCH_WRITE  = 1 << 0;
 const FLAG_WATCH_READ   = 1 << 1;
 const FLAG_FREEZE       = 1 << 2;
 
+const LOG_LEVEL_NONE  = 0;
+const LOG_LEVEL_DEBUG  = 1;
+const LOG_LEVEL_TRACE  = 2;
+
 const MAX_WATCHPOINTS   = 1;
 
 const MAX_SEARCH_RESULTS = 1000;
 
 class CetusInstanceContainer {
     constructor() {
-        // TODO Move this to extension options page
-        this.debugLevel = 0;
+        if (typeof cetusOptions === "object") {
+            this.logLevel = cetusOptions.logLevel;
+        }
 
         this._instances = [];
         this.speedhack = new SpeedHack(1);
@@ -92,7 +97,7 @@ class Cetus {
         this._searchSubset = {};
         this._savedMemory  = null;
 
-        if (cetusInstances.debugLevel >= 1) {
+        if (cetusInstances.logLevel >= LOG_LEVEL_DEBUG) {
             colorLog("constructor: Cetus initialized");
         }
 
@@ -110,7 +115,7 @@ class Cetus {
             body: msg
         };
 
-        if (cetusInstances !== null && cetusInstances.debugLevel >= 2) {
+        if (cetusInstances !== null && cetusInstances.logLevel >= LOG_LEVEL_TRACE) {
             colorLog("Sending message to extension: " + bigintJsonStringify(msgBody));
         }
 
@@ -206,7 +211,7 @@ class Cetus {
         this._searchSubset = {};
         this._savedMemory = null;
 
-        if (cetusInstances.debugLevel >= 1) {
+        if (cetusInstances.logLevel >= LOG_LEVEL_DEBUG) {
             colorLog("restartSearch: Search restarted");
         }
     }
@@ -247,7 +252,7 @@ class Cetus {
                     currentValue = this._queryMemoryUnalignedQuick(entry, memType);
                 }
 
-                if (cetusInstances.debugLevel >= 3) {
+                if (cetusInstances.logLevel >= LOG_LEVEL_TRACE) {
                     colorLog("_compare: Looping subset search. Entry: " + entry + "  Value: " + currentValue);
                 }                
                 
@@ -425,7 +430,7 @@ class Cetus {
                                           upperBoundAddr);
         }
 
-        if (cetusInstances.debugLevel >= 1) {
+        if (cetusInstances.logLevel >= LOG_LEVEL_DEBUG) {
             colorLog("search: exiting search");
         }
 
@@ -608,7 +613,7 @@ class Cetus {
 
         let current = [];
 
-        if (cetusInstances.debugLevel >= 1) {
+        if (cetusInstances.logLevel >= LOG_LEVEL_DEBUG) {
             colorLog("asciiStrings: entering ASCII string search");
         }
    
@@ -629,7 +634,7 @@ class Cetus {
 
                 results[i - current.length] = thisString;
 
-                if (cetusInstances.debugLevel >= 3) {
+                if (cetusInstances.logLevel >= LOG_LEVEL_TRACE) {
                     colorLog("asciiStrings: string found: " + thisString);
                 }
             }
@@ -637,7 +642,7 @@ class Cetus {
             current = [];
         }
 
-        if (cetusInstances.debugLevel >= 1) {
+        if (cetusInstances.logLevel >= LOG_LEVEL_DEBUG) {
             colorLog("asciiStrings: exiting ASCII string search");
         }
 
@@ -666,7 +671,7 @@ class Cetus {
 
         let current = [];
 
-        if (cetusInstances.debugLevel >= 1) {
+        if (cetusInstances.logLevel >= LOG_LEVEL_DEBUG) {
             colorLog("unicodeStrings: entering UNICODE string search");
         }
     
@@ -688,7 +693,7 @@ class Cetus {
                 if (thisString.length >= minLength) {
                     results[i - current.length] = thisString;
 
-                    if (cetusInstances.debugLevel >= 3) {
+                    if (cetusInstances.logLevel >= LOG_LEVEL_TRACE) {
                         colorLog("unicodeStrings: string found: " + thisString);
                     }
                 }    
@@ -697,7 +702,7 @@ class Cetus {
             current = [];
         }
 
-        if (cetusInstances.debugLevel >= 1) {
+        if (cetusInstances.logLevel >= LOG_LEVEL_DEBUG) {
             colorLog("unicodeStrings: exiting UNICODE string search");
         }
 
@@ -708,7 +713,7 @@ class Cetus {
     }
 
     bytesSequence(bytesSeq) {
-        if (cetusInstances.debugLevel >= 1) {
+        if (cetusInstances.logLevel >= LOG_LEVEL_DEBUG) {
             colorLog("bytesSequence: entering bytes sequence search with parameter " + bytesSeq);
         }
 
@@ -739,7 +744,7 @@ class Cetus {
                 results.push(i - bytesSeq.length);
                 match = 0;
 
-                if (cetusInstances.debugLevel >= 3) {
+                if (cetusInstances.logLevel >= LOG_LEVEL_TRACE) {
                     colorLog("bytesSequence: sequence found: " + bytesSeq);
                 }
             } else {
@@ -747,7 +752,7 @@ class Cetus {
             }
         }
 
-        if (cetusInstances.debugLevel >= 1) {
+        if (cetusInstances.logLevel >= LOG_LEVEL_DEBUG) {
             colorLog("bytesSequence: exiting bytes sequence search");
         }
 
@@ -843,7 +848,7 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
         return;
     }
 
-    if (cetusInstances !== null && cetusInstances.debugLevel >= 2) {
+    if (cetusInstances !== null && cetusInstances.logLevel >= LOG_LEVEL_TRACE) {
         colorLog("addEventListener: event received: " + JSON.stringify(msg));
     }
 

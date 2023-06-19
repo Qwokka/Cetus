@@ -41,6 +41,7 @@ class ExtensionInstance {
             initialized: false,
             url: null,
             bookmarks: {},
+            watchpoints: [],
             symbols: {},
             stackTraces: [],
             searchForm: {
@@ -145,7 +146,7 @@ class ExtensionInstance {
     };
 
     addBookmark(memAddr, memType) {
-        this.bookmarks[memAddr] = {
+        this.instanceData.bookmarks[memAddr] = {
             value: 0,
             memType: memType,
             flags: 0,
@@ -155,11 +156,11 @@ class ExtensionInstance {
     }
 
     removeBookmark(memAddr) {
-        if (typeof this.bookmarks[memAddr] === "undefined") {
+        if (typeof this.instanceData.bookmarks[memAddr] === "undefined") {
             return;
         }
 
-        delete this.bookmarks[memAddr];
+        delete this.instanceData.bookmarks[memAddr];
         this.updateBookmarks();
 
         this.removeWatchpoint(memAddr);
@@ -167,10 +168,10 @@ class ExtensionInstance {
 
     updateBookmarks() {
         const msgBody = {
-            bookmarks: this.bookmarks,
+            bookmarks: this.instanceData.bookmarks,
         };
 
-        this.sendPopupMessage(this.instanceId, "updateBookmarks", msgBody);
+        bgExtension.sendPopupMessage(this.instanceId, "updateBookmarks", msgBody);
     }
 
     updateMemView() {
@@ -185,7 +186,7 @@ class ExtensionInstance {
     // Updates the flags of a watchpoint if one already exists for this address
     // Otherwise, adds a new watchpoint, removing the oldest watchpoint if we've hit the cap
     updateWatchpoint(watchAddr, watchValue, newWatchFlags) {
-        const bookmark = this.bookmarks[watchAddr];
+        const bookmark = this.instanceData.bookmarks[watchAddr];
 
         if (typeof bookmark !== "object") {
             throw new Error("Bad address "+watchAddr+" in updateWatchpoint()");
@@ -203,7 +204,7 @@ class ExtensionInstance {
         bookmark.flags = bookmarkFlags;
         bookmark.value = watchValue;
 
-        this.bookmarks[watchAddr] = bookmark;
+        this.instanceData.bookmarks[watchAddr] = bookmark;
 
         const memType = bookmark.memType;
 
@@ -215,7 +216,7 @@ class ExtensionInstance {
         let matchIndex = null;
 
         for (let i = 0; i < MAX_WATCHPOINTS; i++) {
-            if (this._watchpoints[i] == watchAddr) {
+            if (this.instanceData.watchpoints[i] == watchAddr) {
                 matchIndex = i;
                 break;
             }
@@ -225,14 +226,14 @@ class ExtensionInstance {
         // add it. If necessary, remove the oldest watchpoint
         if (matchIndex === null) {
             // We want to "shift" the oldest watchpoint away if we've hit capacity
-            while (this._watchpoints.length >= MAX_WATCHPOINTS) {
-                const shiftedAddr = this._watchpoints.shift();
+            while (this.instanceData.watchpoints.length >= MAX_WATCHPOINTS) {
+                const shiftedAddr = this.instanceData.watchpoints.shift();
 
                 // We also need to update the flags for the affected bookmark
-                this.bookmarks[shiftedAddr].flags = 0;
+                this.instanceData.bookmarks[shiftedAddr].flags = 0;
             }
 
-            this._watchpoints.push(watchAddr);
+            this.instanceData.watchpoints.push(watchAddr);
         }
         else {
             // If a watchpoint exists for this address and we are trying to
@@ -248,12 +249,12 @@ class ExtensionInstance {
 
     _updateWatchpoints() {
         for (let i = 0; i < MAX_WATCHPOINTS; i++) {
-            const watchAddr = this._watchpoints[i];
+            const watchAddr = this.instanceData.watchpoints[i];
 
             const msgBody = {};
 
             if (typeof watchAddr !== "undefined") {
-                const bookmark = this.bookmarks[watchAddr];
+                const bookmark = this.instanceData.bookmarks[watchAddr];
 
                 const memType = bookmark.memType;
 
@@ -280,8 +281,8 @@ class ExtensionInstance {
 
     removeWatchpoint(memAddr) {
         for (let i = 0; i < MAX_WATCHPOINTS; i++) {
-            if (this._watchpoints[i] == memAddr) {
-                this._watchpoints.splice(i, 1); 
+            if (this.instanceData.watchpoints[i] == memAddr) {
+                this.instanceData.watchpoints.splice(i, 1); 
 
                 this._updateWatchpoints();
 
@@ -301,8 +302,6 @@ class ExtensionInstance {
 
 class BackgroundExtension {
     constructor() {
-        this.bookmarks = {};
-        this._watchpoints = [];
         this.instances = [];
         this.instanceId = null;
 
@@ -502,7 +501,7 @@ const popupMessageListener = function(msg) {
             const bookmarkMemAddr = msgBody.memAddr;
             const bookmarkMemType = msgBody.memType;
 
-            bgExtension.addBookmark(bookmarkMemAddr, bookmarkMemType);
+            bgExtension.currentInstance().addBookmark(bookmarkMemAddr, bookmarkMemType);
 
             break;
         case "removeBookmark":
@@ -718,12 +717,12 @@ chrome.runtime.onMessage.addListener(function(msgRaw, msgSender) {
                 return;
             }
 
-            if (typeof bgExtension.bookmarks[address] !== "object") {
+            if (typeof bgExtension.currentInstance().instanceData.bookmarks[address] !== "object") {
                 return;
             }
 
-            bgExtension.bookmarks[address].value = value;
-            bgExtension.updateBookmarks();
+            bgExtension.currentInstance().instanceData.bookmarks[address].value = value;
+            bgExtension.currentInstance().updateBookmarks();
 
             break;
         case "searchResult":
@@ -766,7 +765,7 @@ chrome.runtime.onMessage.addListener(function(msgRaw, msgSender) {
                 return;
             }
 
-            bgExtension.addBookmark(bookmarkAddress, bookmarkMemType);
+            bgExtension.currentInstance().addBookmark(bookmarkAddress, bookmarkMemType);
 
             break;
         case "stringSearchResult":
@@ -838,7 +837,7 @@ chrome.runtime.onMessage.addListener(function(msgRaw, msgSender) {
 
             // We should not receive a watchPointHit message if we have no
             // bookmarks
-            if (Object.keys(bgExtension.bookmarks).length == 0) {
+            if (Object.keys(bgExtension.currentInstance().instanceData.bookmarks).length == 0) {
                 return;
             }
 

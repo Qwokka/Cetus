@@ -23,661 +23,693 @@ window.onbeforeunload = function() {
     }
 };
 
+const ENABLE_WP_NONE  = 0;
+const ENABLE_WP_READ  = 1;
+const ENABLE_WP_WRITE = 2;
+const ENABLE_WP_ALL   = ENABLE_WP_READ | ENABLE_WP_WRITE;
+
 // This function performs the main instrumentation logic of taking a
 // a WebAssembly binary, making necessary additions/modifications, and
 // returning the resulting binary
 const instrumentBinary = function(bufferSource) {
+    let instrumentLevel = ENABLE_WP_ALL;
+
+    if (typeof cetusOptions === "object" && typeof cetusOptions.enableWatchpoints === "string") {
+        instrumentLevel = parseInt(cetusOptions.enableWatchpoints);
+    }
+
+    if (cetusInstances.logLevel >= LOG_LEVEL_DEBUG) {
+        colorLog("Instrumenting with flags " + instrumentLevel);
+    }
+
     const wail = new WailParser();
 
-    const funcTypeWatchCallback = wail.addTypeEntry({
-        form: "func",
-        params: [],
-    });
+    let funcEntryConfigureWatchpoint;
+    let funcEntryReadWatchpoint;
+    let funcEntryWriteWatchpoint;
 
-    const funcTypeWriteWatchpoint = wail.addTypeEntry({
-        form: "func",
-        params: [],
-    });
+    if (instrumentLevel) {
+        const funcTypeWatchCallback = wail.addTypeEntry({
+            form: "func",
+            params: [],
+        });
 
-    const funcTypeReadWatchpoint = wail.addTypeEntry({
-        form: "func",
-        params: [ "i32", "i32", "i32" ],
-        returnType: "i32",
-    });
+        // See the actual code entry for this function for a full explanation of why
+        // we need to split value into upper and lower halves
+        const funcTypeAddWatchpoint = wail.addTypeEntry({
+            form: "func",
+            // addr, value_lower, value_upper, size, flags
+            params: [ "i32", "i32", "i32", "i32", "i32" ],
+        });
 
-    // See the actual code entry for this function for a full explanation of why
-    // we need to split value into upper and lower halves
-    const funcTypeAddWatchpoint = wail.addTypeEntry({
-        form: "func",
-        // addr, value_lower, value_upper, size, flags
-        params: [ "i32", "i32", "i32", "i32", "i32" ],
-    });
+        funcEntryConfigureWatchpoint = wail.addFunctionEntry({
+            type: funcTypeAddWatchpoint,
+        });
 
-    const funcEntryWriteWatchpoint = wail.addFunctionEntry({
-        type: funcTypeWriteWatchpoint,
-    });
+        const globalWatchAddr = wail.addGlobalEntry({
+            globalType: {
+                contentType: "i32",
+                mutability: true,
+            },
+            initExpr: [ OP_I32_CONST, VarUint32(0x00), OP_END ]
+        });
 
-    const funcEntryWriteWatchpoint8Bit = wail.addFunctionEntry({
-        type: funcTypeWriteWatchpoint,
-    });
+        const globalWatchVal = wail.addGlobalEntry({
+            globalType: {
+                contentType: "i64",
+                mutability: true,
+            },
+            initExpr: [ OP_I64_CONST, VarUint32(0x00), OP_END ]
+        });
 
-    const funcEntryWriteWatchpoint16Bit = wail.addFunctionEntry({
-        type: funcTypeWriteWatchpoint,
-    });
+        const globalWatchSize = wail.addGlobalEntry({
+            globalType: {
+                contentType: "i32",
+                mutability: true,
+            },
+            initExpr: [ OP_I32_CONST, VarUint32(0x00), OP_END ]
+        });
 
-    const funcEntryWriteWatchpoint32Bit = wail.addFunctionEntry({
-        type: funcTypeWriteWatchpoint,
-    });
+        const globalWatchFlags = wail.addGlobalEntry({
+            globalType: {
+                contentType: "i32",
+                mutability: true,
+            },
+            initExpr: [ OP_I32_CONST, VarUint32(0x00), OP_END ]
+        });
 
-    const funcEntryWriteWatchpoint64Bit = wail.addFunctionEntry({
-        type: funcTypeWriteWatchpoint,
-    });
+        wail.addExportEntry(funcEntryConfigureWatchpoint, {
+            fieldStr: "addWatch",
+            kind: "func",
+        });
 
-    const funcEntryReadWatchpoint = wail.addFunctionEntry({
-        type: funcTypeReadWatchpoint,
-    });
+        //
+        // This function is called to configure a watchpoint by setting the associated
+        // global variables.
+        // Once mutable external global variables are widely supported by browsers, this
+        // can be done from Javascript and this function can be removed
+        //
+        // Exported functions cannot have i64/f64 as arguments at time of writing. So in
+        // order to support 64-bit watchpoint values, we need to pass the upper/lower
+        // 32-bits as separate arguments. We then recombine them and set globalWatchVal
+        //
+        // Arguments:
+        //  arg_0 = watch address
+        //  arg_1 = watch value lower
+        //  arg_2 = watch value upper
+        //  arg_3 = watch size
+        //  arg_4 = watch flags
+        //
+        wail.addCodeEntry(funcEntryConfigureWatchpoint, {
+            locals: [],
+            code: [
+                // globalWatchAddr = arg_0
+                OP_GET_LOCAL, VarUint32(0x00),
+                OP_SET_GLOBAL, globalWatchAddr.varUint32(),
 
-    const funcEntryConfigureWatchpoint = wail.addFunctionEntry({
-        type: funcTypeAddWatchpoint,
-    });
+                // globalWatchVal = (arg_1 | (arg_2 << 32))
+                OP_GET_LOCAL, VarUint32(0x01),
+                OP_I64_EXTEND_U_I32,
+                OP_GET_LOCAL, VarUint32(0x02),
+                OP_I64_EXTEND_U_I32,
+                OP_I64_CONST, VarUint32(0x20),
+                OP_I64_SHL,
+                OP_I64_OR,
+                OP_SET_GLOBAL, globalWatchVal.varUint32(),
 
-    const importReadWatchFunc = wail.addImportEntry({
-        moduleStr: "env",
-        fieldStr: "readWatchCallback",
-        kind: "func",
-        type: funcTypeWatchCallback
-    });
+                // globalWatchSize = arg_3
+                OP_GET_LOCAL, VarUint32(0x03),
+                OP_SET_GLOBAL, globalWatchSize.varUint32(),
 
-    const importWriteWatchFunc = wail.addImportEntry({
-        moduleStr: "env",
-        fieldStr: "writeWatchCallback",
-        kind: "func",
-        type: funcTypeWatchCallback
-    });
-
-    const globalWatchAddr = wail.addGlobalEntry({
-        globalType: {
-            contentType: "i32",
-            mutability: true,
-        },
-        initExpr: [ OP_I32_CONST, VarUint32(0x00), OP_END ]
-    });
-
-    const globalWatchVal = wail.addGlobalEntry({
-        globalType: {
-            contentType: "i64",
-            mutability: true,
-        },
-        initExpr: [ OP_I64_CONST, VarUint32(0x00), OP_END ]
-    });
-
-    const globalWatchSize = wail.addGlobalEntry({
-        globalType: {
-            contentType: "i32",
-            mutability: true,
-        },
-        initExpr: [ OP_I32_CONST, VarUint32(0x00), OP_END ]
-    });
-
-    const globalWatchFlags = wail.addGlobalEntry({
-        globalType: {
-            contentType: "i32",
-            mutability: true,
-        },
-        initExpr: [ OP_I32_CONST, VarUint32(0x00), OP_END ]
-    });
-
-    wail.addExportEntry(funcEntryConfigureWatchpoint, {
-        fieldStr: "addWatch",
-        kind: "func",
-    });
-
-    //
-    // This function routes a watchpoint check to the correct handler depending on
-    // the size of the configured watchpoint (1, 2, 4, or 8 bytes)
-    //
-    wail.addCodeEntry(funcEntryWriteWatchpoint, {
-        locals: [ "i32" ],
-        code: [
-            OP_GET_GLOBAL, globalWatchSize.varUint32(),
-            OP_TEE_LOCAL, VarUint32(0x00),
-            OP_I32_CONST, VarUint32(0x01),
-            OP_I32_EQ,
-            OP_IF, 0x40,
-                OP_CALL, funcEntryWriteWatchpoint8Bit.varUint32(),
+                // globalWatchFlags = arg_4
+                OP_GET_LOCAL, VarUint32(0x04),
+                OP_SET_GLOBAL, globalWatchFlags.varUint32(),
                 OP_RETURN,
-            OP_END,
-            OP_GET_LOCAL, VarUint32(0x00),
-            OP_I32_CONST, VarUint32(0x02),
-            OP_I32_EQ,
-            OP_IF, 0x40,
-                OP_CALL, funcEntryWriteWatchpoint16Bit.varUint32(),
-                OP_RETURN,
-            OP_END,
-            OP_GET_LOCAL, VarUint32(0x00),
-            OP_I32_CONST, VarUint32(0x04),
-            OP_I32_EQ,
-            OP_IF, 0x40,
-                OP_CALL, funcEntryWriteWatchpoint32Bit.varUint32(),
-                OP_RETURN,
-            OP_END,
-            OP_GET_LOCAL, VarUint32(0x00),
-            OP_I32_CONST, VarUint32(0x08),
-            OP_I32_EQ,
-            OP_IF, 0x40,
-                OP_CALL, funcEntryWriteWatchpoint64Bit.varUint32(),
-                OP_RETURN,
-            OP_END,
-            OP_RETURN,
-            OP_END,
-        ]
-    });
+                OP_END,
+            ]
+        });
 
-    wail.addCodeEntry(funcEntryWriteWatchpoint8Bit, {
-        locals: [],
-        code: [
-            // We have already checked that globalWatchAddr != 0 (See
-            // writeWatchpointInstrCallback) so we start by making sure the
-            // value of our watched address has changed
-            OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-            OP_I64_LOAD8_U, VarUint32(0x00), VarUint32(0x00),
-            OP_GET_GLOBAL, globalWatchVal.varUint32(),
-            OP_I64_NE,
-            OP_IF, 0x40,
-                // If our watched value has changed since we last looked,
-                // we check which flags are set for our watchpoint
-                OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                OP_I32_CONST, VarUint32(0x01),
-                OP_I32_AND,
-                OP_IF, 0x40,
-                    // WRITE flag is set, trigger imported callback
-                    OP_CALL, importWriteWatchFunc.varUint32(),
-                    OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                    OP_I32_CONST, VarUint32(0x04),
-                    OP_I32_AND,
-                    OP_I32_CONST, VarUint32(0x00),
+        if (instrumentLevel & ENABLE_WP_WRITE) {
+            const funcTypeWriteWatchpoint = wail.addTypeEntry({
+                form: "func",
+                params: [],
+            });
+
+            funcEntryWriteWatchpoint = wail.addFunctionEntry({
+                type: funcTypeWriteWatchpoint,
+            });
+            const funcEntryWriteWatchpoint8Bit = wail.addFunctionEntry({
+                type: funcTypeWriteWatchpoint,
+            });
+
+            const funcEntryWriteWatchpoint16Bit = wail.addFunctionEntry({
+                type: funcTypeWriteWatchpoint,
+            });
+
+            const funcEntryWriteWatchpoint32Bit = wail.addFunctionEntry({
+                type: funcTypeWriteWatchpoint,
+            });
+
+            const funcEntryWriteWatchpoint64Bit = wail.addFunctionEntry({
+                type: funcTypeWriteWatchpoint,
+            });
+
+            const importWriteWatchFunc = wail.addImportEntry({
+                moduleStr: "env",
+                fieldStr: "writeWatchCallback",
+                kind: "func",
+                type: funcTypeWatchCallback
+            });
+
+            //
+            // This function routes a watchpoint check to the correct handler depending on
+            // the size of the configured watchpoint (1, 2, 4, or 8 bytes)
+            //
+            wail.addCodeEntry(funcEntryWriteWatchpoint, {
+                locals: [ "i32" ],
+                code: [
+                    OP_GET_GLOBAL, globalWatchSize.varUint32(),
+                    OP_TEE_LOCAL, VarUint32(0x00),
+                    OP_I32_CONST, VarUint32(0x01),
                     OP_I32_EQ,
                     OP_IF, 0x40,
-                        OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                        OP_I64_LOAD8_U, VarUint32(0x00), VarUint32(0x00),
-                        OP_SET_GLOBAL, globalWatchVal.varUint32(),
+                        OP_CALL, funcEntryWriteWatchpoint8Bit.varUint32(),
+                        OP_RETURN,
                     OP_END,
-                OP_END,
-                OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                OP_I32_CONST, VarUint32(0x04),
-                OP_I32_AND,
-                OP_IF, 0x40,
-                    // FREEZE flag is set, revert the value
-                    OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                    OP_GET_GLOBAL, globalWatchVal.varUint32(),
-                    OP_I64_STORE8, VarUint32(0x00), VarUint32(0x00),
-                OP_END,
-            OP_END,
-            OP_RETURN,
-            OP_END,
-        ]
-    });
-
-    wail.addCodeEntry(funcEntryWriteWatchpoint16Bit, {
-        locals: [],
-        code: [
-            // We have already checked that globalWatchAddr != 0 (See
-            // writeWatchpointInstrCallback) so we start by making sure the
-            // value of our watched address has changed
-            OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-            OP_I64_LOAD16_U, VarUint32(0x00), VarUint32(0x00),
-            OP_GET_GLOBAL, globalWatchVal.varUint32(),
-            OP_I64_NE,
-            OP_IF, 0x40,
-                // If our watched value has changed since we last looked,
-                // we check which flags are set for our watchpoint
-                OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                OP_I32_CONST, VarUint32(0x01),
-                OP_I32_AND,
-                OP_IF, 0x40,
-                    // WRITE flag is set, trigger imported callback
-                    OP_CALL, importWriteWatchFunc.varUint32(),
-                    OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                    OP_I32_CONST, VarUint32(0x04),
-                    OP_I32_AND,
-                    OP_I32_CONST, VarUint32(0x00),
-                    OP_I32_EQ,
-                    OP_IF, 0x40,
-                        OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                        OP_I64_LOAD16_U, VarUint32(0x00), VarUint32(0x00),
-                        OP_SET_GLOBAL, globalWatchVal.varUint32(),
-                    OP_END,
-                OP_END,
-                OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                OP_I32_CONST, VarUint32(0x04),
-                OP_I32_AND,
-                OP_IF, 0x40,
-                    // FREEZE flag is set, revert the value
-                    OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                    OP_GET_GLOBAL, globalWatchVal.varUint32(),
-                    OP_I64_STORE16, VarUint32(0x00), VarUint32(0x00),
-                OP_END,
-            OP_END,
-            OP_RETURN,
-            OP_END,
-        ]
-    });
-    wail.addCodeEntry(funcEntryWriteWatchpoint32Bit, {
-        locals: [],
-        code: [
-            // We have already checked that globalWatchAddr != 0 (See
-            // writeWatchpointInstrCallback) so we start by making sure the
-            // value of our watched address has changed
-            OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-            OP_I64_LOAD32_U, VarUint32(0x01), VarUint32(0x00),
-            OP_GET_GLOBAL, globalWatchVal.varUint32(),
-            OP_I64_NE,
-            OP_IF, 0x40,
-                // If our watched value has changed since we last looked,
-                // we check which flags are set for our watchpoint
-                OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                OP_I32_CONST, VarUint32(0x01),
-                OP_I32_AND,
-                OP_IF, 0x40,
-                    // WRITE flag is set, trigger imported callback
-                    OP_CALL, importWriteWatchFunc.varUint32(),
-                    OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                    OP_I32_CONST, VarUint32(0x04),
-                    OP_I32_AND,
-                    OP_I32_CONST, VarUint32(0x00),
-                    OP_I32_EQ,
-                    OP_IF, 0x40,
-                        OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                        OP_I64_LOAD32_U, VarUint32(0x01), VarUint32(0x00),
-                        OP_SET_GLOBAL, globalWatchVal.varUint32(),
-                    OP_END,
-                OP_END,
-                OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                OP_I32_CONST, VarUint32(0x04),
-                OP_I32_AND,
-                OP_IF, 0x40,
-                    // FREEZE flag is set, revert the value
-                    OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                    OP_GET_GLOBAL, globalWatchVal.varUint32(),
-                    OP_I64_STORE32, VarUint32(0x01), VarUint32(0x00),
-                OP_END,
-            OP_END,
-            OP_RETURN,
-            OP_END,
-        ]
-    });
-
-    wail.addCodeEntry(funcEntryWriteWatchpoint64Bit, {
-        locals: [],
-        code: [
-            // We have already checked that globalWatchAddr != 0 (See
-            // writeWatchpointInstrCallback) so we start by making sure the
-            // value of our watched address has changed
-            OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-            OP_I64_LOAD, VarUint32(0x01), VarUint32(0x00),
-            OP_GET_GLOBAL, globalWatchVal.varUint32(),
-            OP_I64_NE,
-            OP_IF, 0x40,
-                // If our watched value has changed since we last looked,
-                // we check which flags are set for our watchpoint
-                OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                OP_I32_CONST, VarUint32(0x01),
-                OP_I32_AND,
-                OP_IF, 0x40,
-                    // WRITE flag is set, trigger imported callback
-                    OP_CALL, importWriteWatchFunc.varUint32(),
-                    OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                    OP_I32_CONST, VarUint32(0x04),
-                    OP_I32_AND,
-                    OP_I32_CONST, VarUint32(0x00),
-                    OP_I32_EQ,
-                    OP_IF, 0x40,
-                        OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                        OP_I64_LOAD, VarUint32(0x01), VarUint32(0x00),
-                        OP_SET_GLOBAL, globalWatchVal.varUint32(),
-                    OP_END,
-                OP_END,
-                OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                OP_I32_CONST, VarUint32(0x04),
-                OP_I32_AND,
-                OP_IF, 0x40,
-                    // FREEZE flag is set, revert the value
-                    OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                    OP_GET_GLOBAL, globalWatchVal.varUint32(),
-                    OP_I64_STORE, VarUint32(0x01), VarUint32(0x00),
-                OP_END,
-            OP_END,
-            OP_RETURN,
-            OP_END,
-        ]
-    });
-
-    //
-    // This function is the primary logic for read watch points. It takes an
-    // address, offset, and size of an attempted memory load and calculates
-    // whether that load will read from a watchpoint address. If so, it calls
-    // the registered watchpoint callback
-    //
-    // Arguments:
-    //  local_0 = base pointer
-    //  local_1 = load offset
-    //  local_2 = load size
-    //
-    wail.addCodeEntry(funcEntryReadWatchpoint, {
-        locals: [],
-        code: [
-            OP_BLOCK, 0x40,
-                OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                OP_IF, 0x40,
-                    OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                    OP_GET_LOCAL, VarUint32(0x00),
                     OP_I32_CONST, VarUint32(0x02),
-                    OP_I32_AND,
+                    OP_I32_EQ,
                     OP_IF, 0x40,
-                        OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                        OP_GET_GLOBAL, globalWatchSize.varUint32(),
-                        OP_I32_ADD,
-                        OP_GET_LOCAL, VarUint32(0x00),
-                        OP_GET_LOCAL, VarUint32(0x01),
-                        OP_I32_ADD,
-                        OP_I32_LT_U,
-                        OP_BR_IF, VarUint32(0x02),
-                        OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                        OP_GET_LOCAL, VarUint32(0x00),
-                        OP_GET_LOCAL, VarUint32(0x01),
-                        OP_I32_ADD,
-                        OP_GET_LOCAL, VarUint32(0x02),
-                        OP_I32_ADD,
-                        OP_I32_GT_U,
-                        OP_BR_IF, VarUint32(0x02),
-                        OP_CALL, importReadWatchFunc.varUint32(),
+                        OP_CALL, funcEntryWriteWatchpoint16Bit.varUint32(),
+                        OP_RETURN,
                     OP_END,
-                OP_END,
-            OP_END,
-            OP_GET_LOCAL, VarUint32(0x00),
-            OP_RETURN,
-            OP_END,
-        ]
-    });
+                    OP_GET_LOCAL, VarUint32(0x00),
+                    OP_I32_CONST, VarUint32(0x04),
+                    OP_I32_EQ,
+                    OP_IF, 0x40,
+                        OP_CALL, funcEntryWriteWatchpoint32Bit.varUint32(),
+                        OP_RETURN,
+                    OP_END,
+                    OP_GET_LOCAL, VarUint32(0x00),
+                    OP_I32_CONST, VarUint32(0x08),
+                    OP_I32_EQ,
+                    OP_IF, 0x40,
+                        OP_CALL, funcEntryWriteWatchpoint64Bit.varUint32(),
+                        OP_RETURN,
+                    OP_END,
+                    OP_RETURN,
+                    OP_END,
+                ]
+            });
 
-    //
-    // This function is called to configure a watchpoint by setting the associated
-    // global variables.
-    // Once mutable external global variables are widely supported by browsers, this
-    // can be done from Javascript and this function can be removed
-    //
-    // Exported functions cannot have i64/f64 as arguments at time of writing. So in
-    // order to support 64-bit watchpoint values, we need to pass the upper/lower
-    // 32-bits as separate arguments. We then recombine them and set globalWatchVal
-    //
-    // Arguments:
-    //  arg_0 = watch address
-    //  arg_1 = watch value lower
-    //  arg_2 = watch value upper
-    //  arg_3 = watch size
-    //  arg_4 = watch flags
-    //
-    wail.addCodeEntry(funcEntryConfigureWatchpoint, {
-        locals: [],
-        code: [
-            // globalWatchAddr = arg_0
-            OP_GET_LOCAL, VarUint32(0x00),
-            OP_SET_GLOBAL, globalWatchAddr.varUint32(),
+            wail.addCodeEntry(funcEntryWriteWatchpoint8Bit, {
+                locals: [],
+                code: [
+                    // We have already checked that globalWatchAddr != 0 (See
+                    // writeWatchpointInstrCallback) so we start by making sure the
+                    // value of our watched address has changed
+                    OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                    OP_I64_LOAD8_U, VarUint32(0x00), VarUint32(0x00),
+                    OP_GET_GLOBAL, globalWatchVal.varUint32(),
+                    OP_I64_NE,
+                    OP_IF, 0x40,
+                        // If our watched value has changed since we last looked,
+                        // we check which flags are set for our watchpoint
+                        OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                        OP_I32_CONST, VarUint32(0x01),
+                        OP_I32_AND,
+                        OP_IF, 0x40,
+                            // WRITE flag is set, trigger imported callback
+                            OP_CALL, importWriteWatchFunc.varUint32(),
+                            OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                            OP_I32_CONST, VarUint32(0x04),
+                            OP_I32_AND,
+                            OP_I32_CONST, VarUint32(0x00),
+                            OP_I32_EQ,
+                            OP_IF, 0x40,
+                                OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                                OP_I64_LOAD8_U, VarUint32(0x00), VarUint32(0x00),
+                                OP_SET_GLOBAL, globalWatchVal.varUint32(),
+                            OP_END,
+                        OP_END,
+                        OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                        OP_I32_CONST, VarUint32(0x04),
+                        OP_I32_AND,
+                        OP_IF, 0x40,
+                            // FREEZE flag is set, revert the value
+                            OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                            OP_GET_GLOBAL, globalWatchVal.varUint32(),
+                            OP_I64_STORE8, VarUint32(0x00), VarUint32(0x00),
+                        OP_END,
+                    OP_END,
+                    OP_RETURN,
+                    OP_END,
+                ]
+            });
 
-            // globalWatchVal = (arg_1 | (arg_2 << 32))
-            OP_GET_LOCAL, VarUint32(0x01),
-            OP_I64_EXTEND_U_I32,
-            OP_GET_LOCAL, VarUint32(0x02),
-            OP_I64_EXTEND_U_I32,
-            OP_I64_CONST, VarUint32(0x20),
-            OP_I64_SHL,
-            OP_I64_OR,
-            OP_SET_GLOBAL, globalWatchVal.varUint32(),
+            wail.addCodeEntry(funcEntryWriteWatchpoint16Bit, {
+                locals: [],
+                code: [
+                    // We have already checked that globalWatchAddr != 0 (See
+                    // writeWatchpointInstrCallback) so we start by making sure the
+                    // value of our watched address has changed
+                    OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                    OP_I64_LOAD16_U, VarUint32(0x00), VarUint32(0x00),
+                    OP_GET_GLOBAL, globalWatchVal.varUint32(),
+                    OP_I64_NE,
+                    OP_IF, 0x40,
+                        // If our watched value has changed since we last looked,
+                        // we check which flags are set for our watchpoint
+                        OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                        OP_I32_CONST, VarUint32(0x01),
+                        OP_I32_AND,
+                        OP_IF, 0x40,
+                            // WRITE flag is set, trigger imported callback
+                            OP_CALL, importWriteWatchFunc.varUint32(),
+                            OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                            OP_I32_CONST, VarUint32(0x04),
+                            OP_I32_AND,
+                            OP_I32_CONST, VarUint32(0x00),
+                            OP_I32_EQ,
+                            OP_IF, 0x40,
+                                OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                                OP_I64_LOAD16_U, VarUint32(0x00), VarUint32(0x00),
+                                OP_SET_GLOBAL, globalWatchVal.varUint32(),
+                            OP_END,
+                        OP_END,
+                        OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                        OP_I32_CONST, VarUint32(0x04),
+                        OP_I32_AND,
+                        OP_IF, 0x40,
+                            // FREEZE flag is set, revert the value
+                            OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                            OP_GET_GLOBAL, globalWatchVal.varUint32(),
+                            OP_I64_STORE16, VarUint32(0x00), VarUint32(0x00),
+                        OP_END,
+                    OP_END,
+                    OP_RETURN,
+                    OP_END,
+                ]
+            });
+            wail.addCodeEntry(funcEntryWriteWatchpoint32Bit, {
+                locals: [],
+                code: [
+                    // We have already checked that globalWatchAddr != 0 (See
+                    // writeWatchpointInstrCallback) so we start by making sure the
+                    // value of our watched address has changed
+                    OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                    OP_I64_LOAD32_U, VarUint32(0x01), VarUint32(0x00),
+                    OP_GET_GLOBAL, globalWatchVal.varUint32(),
+                    OP_I64_NE,
+                    OP_IF, 0x40,
+                        // If our watched value has changed since we last looked,
+                        // we check which flags are set for our watchpoint
+                        OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                        OP_I32_CONST, VarUint32(0x01),
+                        OP_I32_AND,
+                        OP_IF, 0x40,
+                            // WRITE flag is set, trigger imported callback
+                            OP_CALL, importWriteWatchFunc.varUint32(),
+                            OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                            OP_I32_CONST, VarUint32(0x04),
+                            OP_I32_AND,
+                            OP_I32_CONST, VarUint32(0x00),
+                            OP_I32_EQ,
+                            OP_IF, 0x40,
+                                OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                                OP_I64_LOAD32_U, VarUint32(0x01), VarUint32(0x00),
+                                OP_SET_GLOBAL, globalWatchVal.varUint32(),
+                            OP_END,
+                        OP_END,
+                        OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                        OP_I32_CONST, VarUint32(0x04),
+                        OP_I32_AND,
+                        OP_IF, 0x40,
+                            // FREEZE flag is set, revert the value
+                            OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                            OP_GET_GLOBAL, globalWatchVal.varUint32(),
+                            OP_I64_STORE32, VarUint32(0x01), VarUint32(0x00),
+                        OP_END,
+                    OP_END,
+                    OP_RETURN,
+                    OP_END,
+                ]
+            });
 
-            // globalWatchSize = arg_3
-            OP_GET_LOCAL, VarUint32(0x03),
-            OP_SET_GLOBAL, globalWatchSize.varUint32(),
-
-            // globalWatchFlags = arg_4
-            OP_GET_LOCAL, VarUint32(0x04),
-            OP_SET_GLOBAL, globalWatchFlags.varUint32(),
-            OP_RETURN,
-            OP_END,
-        ]
-    });
-
-    // TODO Comment description
-    const readWatchpointInstrCallback = function(instrBytes) {
-        const reader = new BufferReader(instrBytes);
-
-        const opcode = reader.readUint8();
-
-        const flags = reader.readVarUint32();
-        const offset = reader.readVarUint32();
-
-        const pushSizeOpcode = [ OP_I32_CONST ];
-
-        let pushSizeImmediate;
-        let arg;
-
-        switch (opcode) {
-            case OP_I32_LOAD8_S:
-            case OP_I32_LOAD8_U:
-            case OP_I64_LOAD8_S:
-            case OP_I64_LOAD8_U:
-                pushSizeImmediate = VarUint32(1);
-                break;
-            case OP_I32_LOAD16_S:
-            case OP_I32_LOAD16_U:
-            case OP_I64_LOAD16_S:
-            case OP_I64_LOAD16_U:
-                pushSizeImmediate = VarUint32(2);
-                break;
-            case OP_I32_LOAD:
-            case OP_F32_LOAD:
-            case OP_I64_LOAD32_S:
-            case OP_I64_LOAD32_U:
-                pushSizeImmediate = VarUint32(4);
-                break;
-            case OP_I64_LOAD:
-            case OP_F64_LOAD:
-                pushSizeImmediate = VarUint32(8);
-                break;
-            case OP_SIMD:
-                arg = instrBytes[1];
-                switch(arg) {
-                    case SIMD_V128_LOAD8_LANE:
-                    case SIMD_V128_LOAD8_SPLAT:
-                        pushSizeImmediate = VarUint32(1);
-                        break;
-                    case SIMD_V128_LOAD16_LANE:
-                    case SIMD_V128_LOAD16_SPLAT:
-                        pushSizeImmediate = VarUint32(2);
-                    case SIMD_V128_LOAD32_LANE:
-                    case SIMD_V128_LOAD32_SPLAT:
-                    case SIMD_V128_LOAD32_ZERO:
-                        pushSizeImmediate = VarUint32(4);
-                    case SIMD_V128_LOAD8X8_S:
-                    case SIMD_V128_LOAD8X8_U:
-                    case SIMD_V128_LOAD16X4_S:
-                    case SIMD_V128_LOAD16X4_U:
-                    case SIMD_V128_LOAD32X2_S:
-                    case SIMD_V128_LOAD32X2_U:
-                    case SIMD_V128_LOAD64_LANE:
-                    case SIMD_V128_LOAD64_SPLAT:
-                    case SIMD_V128_LOAD64_ZERO:
-                        pushSizeImmediate = VarUint32(8);
-                    case SIMD_V128_LOAD:
-                        pushSizeImmediate = VarUint32(16);
-                        break;
-                }
-                break;
-            case OP_ATOMIC:
-                arg = instrBytes[1];
-                switch(arg) {
-                    case ARG_I32_ATOMIC_LOAD:
-                    case ARG_I64_ATOMIC_LOAD_32U:
-                        pushSizeImmediate = VarUint32(4);
-                        break;
-                    case ARG_I64_ATOMIC_LOAD:
-                        pushSizeImmediate = VarUint32(8);
-                        break;
-                    case ARG_I32_ATOMIC_LOAD_8U:
-                    case ARG_I64_ATOMIC_LOAD_8U:
-                        pushSizeImmediate = VarUint32(1);
-                        break;
-                    case ARG_I32_ATOMIC_LOAD_16U:
-                    case ARG_I64_ATOMIC_LOAD_16U:
-                        pushSizeImmediate = VarUint32(2);
-                        break;
-                    default:
-                        throw new Error("Bad atomic argument in readWatchpointInstrCallback()");
-                }
-                break;
-            default:
-                throw new Error("Bad opcode in readWatchpointInstrCallback()");
+            wail.addCodeEntry(funcEntryWriteWatchpoint64Bit, {
+                locals: [],
+                code: [
+                    // We have already checked that globalWatchAddr != 0 (See
+                    // writeWatchpointInstrCallback) so we start by making sure the
+                    // value of our watched address has changed
+                    OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                    OP_I64_LOAD, VarUint32(0x01), VarUint32(0x00),
+                    OP_GET_GLOBAL, globalWatchVal.varUint32(),
+                    OP_I64_NE,
+                    OP_IF, 0x40,
+                        // If our watched value has changed since we last looked,
+                        // we check which flags are set for our watchpoint
+                        OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                        OP_I32_CONST, VarUint32(0x01),
+                        OP_I32_AND,
+                        OP_IF, 0x40,
+                            // WRITE flag is set, trigger imported callback
+                            OP_CALL, importWriteWatchFunc.varUint32(),
+                            OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                            OP_I32_CONST, VarUint32(0x04),
+                            OP_I32_AND,
+                            OP_I32_CONST, VarUint32(0x00),
+                            OP_I32_EQ,
+                            OP_IF, 0x40,
+                                OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                                OP_I64_LOAD, VarUint32(0x01), VarUint32(0x00),
+                                OP_SET_GLOBAL, globalWatchVal.varUint32(),
+                            OP_END,
+                        OP_END,
+                        OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                        OP_I32_CONST, VarUint32(0x04),
+                        OP_I32_AND,
+                        OP_IF, 0x40,
+                            // FREEZE flag is set, revert the value
+                            OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                            OP_GET_GLOBAL, globalWatchVal.varUint32(),
+                            OP_I64_STORE, VarUint32(0x01), VarUint32(0x00),
+                        OP_END,
+                    OP_END,
+                    OP_RETURN,
+                    OP_END,
+                ]
+            });
         }
 
-        // This would be cleaner using the spread operator, however it would
-        // also be ludicrously slow
-        const pushOffsetOpcode = [ OP_I32_CONST ];
-        const pushOffsetImmediate = VarUint32(offset);
+        if (instrumentLevel & ENABLE_WP_READ) {
+            const funcTypeReadWatchpoint = wail.addTypeEntry({
+                form: "func",
+                params: [ "i32", "i32", "i32" ],
+                returnType: "i32",
+            });
 
-        const callOpcode = [ OP_CALL ];
-        const callDest = funcEntryReadWatchpoint.varUint32();
+            funcEntryReadWatchpoint = wail.addFunctionEntry({
+                type: funcTypeReadWatchpoint,
+            });
 
-        reader.copyBuffer(pushSizeOpcode);
-        reader.copyBuffer(pushSizeImmediate);
-        reader.copyBuffer(pushOffsetOpcode);
-        reader.copyBuffer(pushOffsetImmediate);
-        reader.copyBuffer(callOpcode);
-        reader.copyBuffer(callDest);
-        reader.copyBuffer(instrBytes);
+            const importReadWatchFunc = wail.addImportEntry({
+                moduleStr: "env",
+                fieldStr: "readWatchCallback",
+                kind: "func",
+                type: funcTypeWatchCallback
+            });
 
-        return reader.write();
-    };
+            //
+            // This function is the primary logic for read watch points. It takes an
+            // address, offset, and size of an attempted memory load and calculates
+            // whether that load will read from a watchpoint address. If so, it calls
+            // the registered watchpoint callback
+            //
+            // Arguments:
+            //  local_0 = base pointer
+            //  local_1 = load offset
+            //  local_2 = load size
+            //
+            wail.addCodeEntry(funcEntryReadWatchpoint, {
+                locals: [],
+                code: [
+                    OP_BLOCK, 0x40,
+                        OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                        OP_IF, 0x40,
+                            OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                            OP_I32_CONST, VarUint32(0x02),
+                            OP_I32_AND,
+                            OP_IF, 0x40,
+                                OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                                OP_GET_GLOBAL, globalWatchSize.varUint32(),
+                                OP_I32_ADD,
+                                OP_GET_LOCAL, VarUint32(0x00),
+                                OP_GET_LOCAL, VarUint32(0x01),
+                                OP_I32_ADD,
+                                OP_I32_LT_U,
+                                OP_BR_IF, VarUint32(0x02),
+                                OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                                OP_GET_LOCAL, VarUint32(0x00),
+                                OP_GET_LOCAL, VarUint32(0x01),
+                                OP_I32_ADD,
+                                OP_GET_LOCAL, VarUint32(0x02),
+                                OP_I32_ADD,
+                                OP_I32_GT_U,
+                                OP_BR_IF, VarUint32(0x02),
+                                OP_CALL, importReadWatchFunc.varUint32(),
+                            OP_END,
+                        OP_END,
+                    OP_END,
+                    OP_GET_LOCAL, VarUint32(0x00),
+                    OP_RETURN,
+                    OP_END,
+                ]
+            });
+        }
 
-    //
-    // Each store instruction is followed by a check to see if that instruction modified
-    // a "watchpoint" address. The actual "watchpoint" function will not be called
-    // unless the flag is nonzero. This is just a quick, preliminary check to help ensure
-    // that the least extra instructions possible are executed when watchpoints are disabled.
-    // The real watchpoint logic exists in the CODE entry for funcEntryWriteWatchpoint above.
-    //
-    // Injected instructions:
-    //
-    // get_global <globalWatchFlags>
-    // if
-    //     call <funcEntryWriteWatchpoint>
-    // end 
-    //
-    const writeWatchpointInstrCallback = function(instrBytes) {
-        const reader = new BufferReader();
+        // TODO Comment description
+        const readWatchpointInstrCallback = function(instrBytes) {
+            const reader = new BufferReader(instrBytes);
 
-        // As mentioned above, we avoid using the spread operator here solely
-        // for performance reasons
-        const getGlobalOpcode = [ OP_GET_GLOBAL ];
-        const getGlobalImmediate = globalWatchFlags.varUint32();
+            const opcode = reader.readUint8();
 
-        const ifOpcode = [ OP_IF, 0x40 ];
+            const flags = reader.readVarUint32();
+            const offset = reader.readVarUint32();
 
-        const callOpcode = [ OP_CALL ];
-        const callDest = funcEntryWriteWatchpoint.varUint32();
+            const pushSizeOpcode = [ OP_I32_CONST ];
 
-        const endOpcode = [ OP_END ];
+            let pushSizeImmediate;
+            let arg;
 
-        reader.copyBuffer(instrBytes);
-        reader.copyBuffer(getGlobalOpcode);
-        reader.copyBuffer(getGlobalImmediate);
-        reader.copyBuffer(ifOpcode);
-        reader.copyBuffer(callOpcode);
-        reader.copyBuffer(callDest);
-        reader.copyBuffer(endOpcode);
+            switch (opcode) {
+                case OP_I32_LOAD8_S:
+                case OP_I32_LOAD8_U:
+                case OP_I64_LOAD8_S:
+                case OP_I64_LOAD8_U:
+                    pushSizeImmediate = VarUint32(1);
+                    break;
+                case OP_I32_LOAD16_S:
+                case OP_I32_LOAD16_U:
+                case OP_I64_LOAD16_S:
+                case OP_I64_LOAD16_U:
+                    pushSizeImmediate = VarUint32(2);
+                    break;
+                case OP_I32_LOAD:
+                case OP_F32_LOAD:
+                case OP_I64_LOAD32_S:
+                case OP_I64_LOAD32_U:
+                    pushSizeImmediate = VarUint32(4);
+                    break;
+                case OP_I64_LOAD:
+                case OP_F64_LOAD:
+                    pushSizeImmediate = VarUint32(8);
+                    break;
+                case OP_SIMD:
+                    arg = instrBytes[1];
+                    switch(arg) {
+                        case SIMD_V128_LOAD8_LANE:
+                        case SIMD_V128_LOAD8_SPLAT:
+                            pushSizeImmediate = VarUint32(1);
+                            break;
+                        case SIMD_V128_LOAD16_LANE:
+                        case SIMD_V128_LOAD16_SPLAT:
+                            pushSizeImmediate = VarUint32(2);
+                        case SIMD_V128_LOAD32_LANE:
+                        case SIMD_V128_LOAD32_SPLAT:
+                        case SIMD_V128_LOAD32_ZERO:
+                            pushSizeImmediate = VarUint32(4);
+                        case SIMD_V128_LOAD8X8_S:
+                        case SIMD_V128_LOAD8X8_U:
+                        case SIMD_V128_LOAD16X4_S:
+                        case SIMD_V128_LOAD16X4_U:
+                        case SIMD_V128_LOAD32X2_S:
+                        case SIMD_V128_LOAD32X2_U:
+                        case SIMD_V128_LOAD64_LANE:
+                        case SIMD_V128_LOAD64_SPLAT:
+                        case SIMD_V128_LOAD64_ZERO:
+                            pushSizeImmediate = VarUint32(8);
+                        case SIMD_V128_LOAD:
+                            pushSizeImmediate = VarUint32(16);
+                            break;
+                    }
+                    break;
+                case OP_ATOMIC:
+                    arg = instrBytes[1];
+                    switch(arg) {
+                        case ARG_I32_ATOMIC_LOAD:
+                        case ARG_I64_ATOMIC_LOAD_32U:
+                            pushSizeImmediate = VarUint32(4);
+                            break;
+                        case ARG_I64_ATOMIC_LOAD:
+                            pushSizeImmediate = VarUint32(8);
+                            break;
+                        case ARG_I32_ATOMIC_LOAD_8U:
+                        case ARG_I64_ATOMIC_LOAD_8U:
+                            pushSizeImmediate = VarUint32(1);
+                            break;
+                        case ARG_I32_ATOMIC_LOAD_16U:
+                        case ARG_I64_ATOMIC_LOAD_16U:
+                            pushSizeImmediate = VarUint32(2);
+                            break;
+                        default:
+                            throw new Error("Bad atomic argument in readWatchpointInstrCallback()");
+                    }
+                    break;
+                default:
+                    throw new Error("Bad opcode in readWatchpointInstrCallback()");
+            }
 
-        return reader.write();
-    };
+            // This would be cleaner using the spread operator, however it would
+            // also be ludicrously slow
+            const pushOffsetOpcode = [ OP_I32_CONST ];
+            const pushOffsetImmediate = VarUint32(offset);
 
-    // All SIMD instructions start with the same opcode (0xFD) so they need
-    // their own parser
-    // This parser just ensures that the instruction is actually a load/store
-    // then routes the instruction to the proper callback
-    const simdInstrCallback = function(instrBytes) {
-        const arg = instrBytes[1];
+            const callOpcode = [ OP_CALL ];
+            const callDest = funcEntryReadWatchpoint.varUint32();
 
-        switch (arg) {
-            case SIMD_V128_LOAD:
-            case SIMD_V128_LOAD8X8_S:
-            case SIMD_V128_LOAD8X8_U:
-            case SIMD_V128_LOAD16X4_S:
-            case SIMD_V128_LOAD16X4_U:
-            case SIMD_V128_LOAD32X2_S:
-            case SIMD_V128_LOAD32X2_U:
-            case SIMD_V128_LOAD8_SPLAT:
-            case SIMD_V128_LOAD16_SPLAT:
-            case SIMD_V128_LOAD32_SPLAT:
-            case SIMD_V128_LOAD64_SPLAT:
-            case SIMD_V128_LOAD32_ZERO:
-            case SIMD_V128_LOAD64_ZERO:
-            case SIMD_V128_LOAD8_LANE:
-            case SIMD_V128_LOAD16_LANE:
-            case SIMD_V128_LOAD32_LANE:
-            case SIMD_V128_LOAD64_LANE:
+            reader.copyBuffer(pushSizeOpcode);
+            reader.copyBuffer(pushSizeImmediate);
+            reader.copyBuffer(pushOffsetOpcode);
+            reader.copyBuffer(pushOffsetImmediate);
+            reader.copyBuffer(callOpcode);
+            reader.copyBuffer(callDest);
+            reader.copyBuffer(instrBytes);
+
+            return reader.write();
+        };
+
+        //
+        // Each store instruction is followed by a check to see if that instruction modified
+        // a "watchpoint" address. The actual "watchpoint" function will not be called
+        // unless the flag is nonzero. This is just a quick, preliminary check to help ensure
+        // that the least extra instructions possible are executed when watchpoints are disabled.
+        // The real watchpoint logic exists in the CODE entry for funcEntryWriteWatchpoint above.
+        //
+        // Injected instructions:
+        //
+        // get_global <globalWatchFlags>
+        // if
+        //     call <funcEntryWriteWatchpoint>
+        // end 
+        //
+        const writeWatchpointInstrCallback = function(instrBytes) {
+            const reader = new BufferReader();
+
+            // As mentioned above, we avoid using the spread operator here solely
+            // for performance reasons
+            const getGlobalOpcode = [ OP_GET_GLOBAL ];
+            const getGlobalImmediate = globalWatchFlags.varUint32();
+
+            const ifOpcode = [ OP_IF, 0x40 ];
+
+            const callOpcode = [ OP_CALL ];
+            const callDest = funcEntryWriteWatchpoint.varUint32();
+
+            const endOpcode = [ OP_END ];
+
+            reader.copyBuffer(instrBytes);
+            reader.copyBuffer(getGlobalOpcode);
+            reader.copyBuffer(getGlobalImmediate);
+            reader.copyBuffer(ifOpcode);
+            reader.copyBuffer(callOpcode);
+            reader.copyBuffer(callDest);
+            reader.copyBuffer(endOpcode);
+
+            return reader.write();
+        };
+
+        // All SIMD instructions start with the same opcode (0xFD) so they need
+        // their own parser
+        // This parser just ensures that the instruction is actually a load/store
+        // then routes the instruction to the proper callback
+        const simdInstrCallback = function(instrBytes) {
+            const arg = instrBytes[1];
+
+            switch (arg) {
+                case SIMD_V128_LOAD:
+                case SIMD_V128_LOAD8X8_S:
+                case SIMD_V128_LOAD8X8_U:
+                case SIMD_V128_LOAD16X4_S:
+                case SIMD_V128_LOAD16X4_U:
+                case SIMD_V128_LOAD32X2_S:
+                case SIMD_V128_LOAD32X2_U:
+                case SIMD_V128_LOAD8_SPLAT:
+                case SIMD_V128_LOAD16_SPLAT:
+                case SIMD_V128_LOAD32_SPLAT:
+                case SIMD_V128_LOAD64_SPLAT:
+                case SIMD_V128_LOAD32_ZERO:
+                case SIMD_V128_LOAD64_ZERO:
+                case SIMD_V128_LOAD8_LANE:
+                case SIMD_V128_LOAD16_LANE:
+                case SIMD_V128_LOAD32_LANE:
+                case SIMD_V128_LOAD64_LANE:
+                    if (instrumentLevel & ENABLE_WP_READ) {
+                        return readWatchpointInstrCallback(instrBytes);
+                    }
+                case SIMD_V128_STORE:
+                case SIMD_V128_STORE8_LANE:
+                case SIMD_V128_STORE16_LANE:
+                case SIMD_V128_STORE32_LANE:
+                case SIMD_V128_STORE64_LANE:
+                    if (instrumentLevel & ENABLE_WP_WRITE) {
+                        return writeWatchpointInstrCallback(instrBytes);
+                    }
+            }
+
+            return instrBytes;
+        };
+
+        // All atomic instructions start with the same opcode (0xFE) so they need
+        // their own parser
+        // This parser just ensures that the instruction is actually an atomic load/store
+        // then routes the instruction to the proper callback
+        const atomicInstrCallback = function(instrBytes) {
+            const arg = instrBytes[1];
+
+            if (arg >= ARG_I32_ATOMIC_LOAD && arg <= ARG_I64_ATOMIC_LOAD_32U) {
                 return readWatchpointInstrCallback(instrBytes);
-            case SIMD_V128_STORE:
-            case SIMD_V128_STORE8_LANE:
-            case SIMD_V128_STORE16_LANE:
-            case SIMD_V128_STORE32_LANE:
-            case SIMD_V128_STORE64_LANE:
+            }
+            else if (arg >= ARG_I32_ATOMIC_STORE && arg <= ARG_I64_ATOMIC_RMW_CMPXCHG_32U) {
                 return writeWatchpointInstrCallback(instrBytes);
+
+            }
+
+            return instrBytes;
+        };
+
+        if (instrumentLevel & ENABLE_WP_READ) {
+            wail.addInstructionParser(OP_I32_LOAD,     readWatchpointInstrCallback);
+            wail.addInstructionParser(OP_I64_LOAD,     readWatchpointInstrCallback);
+            wail.addInstructionParser(OP_F32_LOAD,     readWatchpointInstrCallback);
+            wail.addInstructionParser(OP_F64_LOAD,     readWatchpointInstrCallback);
+            wail.addInstructionParser(OP_I32_LOAD8_S,  readWatchpointInstrCallback);
+            wail.addInstructionParser(OP_I32_LOAD8_U,  readWatchpointInstrCallback);
+            wail.addInstructionParser(OP_I32_LOAD16_S, readWatchpointInstrCallback);
+            wail.addInstructionParser(OP_I32_LOAD16_U, readWatchpointInstrCallback);
+            wail.addInstructionParser(OP_I64_LOAD8_S,  readWatchpointInstrCallback);
+            wail.addInstructionParser(OP_I64_LOAD8_U,  readWatchpointInstrCallback);
+            wail.addInstructionParser(OP_I64_LOAD16_S, readWatchpointInstrCallback);
+            wail.addInstructionParser(OP_I64_LOAD16_U, readWatchpointInstrCallback);
+            wail.addInstructionParser(OP_I64_LOAD32_S, readWatchpointInstrCallback);
+            wail.addInstructionParser(OP_I64_LOAD32_U, readWatchpointInstrCallback);
         }
 
-        return instrBytes;
-    };
-
-    // All atomic instructions start with the same opcode (0xFE) so they need
-    // their own parser
-    // This parser just ensures that the instruction is actually an atomic load/store
-    // then routes the instruction to the proper callback
-    const atomicInstrCallback = function(instrBytes) {
-        const arg = instrBytes[1];
-
-        if (arg >= ARG_I32_ATOMIC_LOAD && arg <= ARG_I64_ATOMIC_LOAD_32U) {
-            return readWatchpointInstrCallback(instrBytes);
-        }
-        else if (arg >= ARG_I32_ATOMIC_STORE && arg <= ARG_I64_ATOMIC_RMW_CMPXCHG_32U) {
-            return writeWatchpointInstrCallback(instrBytes);
-
+        if (instrumentLevel & ENABLE_WP_WRITE) {
+            wail.addInstructionParser(OP_I32_STORE,   writeWatchpointInstrCallback);
+            wail.addInstructionParser(OP_I64_STORE,   writeWatchpointInstrCallback);
+            wail.addInstructionParser(OP_F32_STORE,   writeWatchpointInstrCallback);
+            wail.addInstructionParser(OP_F64_STORE,   writeWatchpointInstrCallback);
+            wail.addInstructionParser(OP_I32_STORE8,  writeWatchpointInstrCallback);
+            wail.addInstructionParser(OP_I32_STORE16, writeWatchpointInstrCallback);
+            wail.addInstructionParser(OP_I64_STORE8,  writeWatchpointInstrCallback);
+            wail.addInstructionParser(OP_I64_STORE16, writeWatchpointInstrCallback);
+            wail.addInstructionParser(OP_I64_STORE32, writeWatchpointInstrCallback);
         }
 
-        return instrBytes;
-    };
-
-    wail.addInstructionParser(OP_I32_LOAD,     readWatchpointInstrCallback);
-    wail.addInstructionParser(OP_I64_LOAD,     readWatchpointInstrCallback);
-    wail.addInstructionParser(OP_F32_LOAD,     readWatchpointInstrCallback);
-    wail.addInstructionParser(OP_F64_LOAD,     readWatchpointInstrCallback);
-    wail.addInstructionParser(OP_I32_LOAD8_S,  readWatchpointInstrCallback);
-    wail.addInstructionParser(OP_I32_LOAD8_U,  readWatchpointInstrCallback);
-    wail.addInstructionParser(OP_I32_LOAD16_S, readWatchpointInstrCallback);
-    wail.addInstructionParser(OP_I32_LOAD16_U, readWatchpointInstrCallback);
-    wail.addInstructionParser(OP_I64_LOAD8_S,  readWatchpointInstrCallback);
-    wail.addInstructionParser(OP_I64_LOAD8_U,  readWatchpointInstrCallback);
-    wail.addInstructionParser(OP_I64_LOAD16_S, readWatchpointInstrCallback);
-    wail.addInstructionParser(OP_I64_LOAD16_U, readWatchpointInstrCallback);
-    wail.addInstructionParser(OP_I64_LOAD32_S, readWatchpointInstrCallback);
-    wail.addInstructionParser(OP_I64_LOAD32_U, readWatchpointInstrCallback);
-
-    wail.addInstructionParser(OP_I32_STORE,   writeWatchpointInstrCallback);
-    wail.addInstructionParser(OP_I64_STORE,   writeWatchpointInstrCallback);
-    wail.addInstructionParser(OP_F32_STORE,   writeWatchpointInstrCallback);
-    wail.addInstructionParser(OP_F64_STORE,   writeWatchpointInstrCallback);
-    wail.addInstructionParser(OP_I32_STORE8,  writeWatchpointInstrCallback);
-    wail.addInstructionParser(OP_I32_STORE16, writeWatchpointInstrCallback);
-    wail.addInstructionParser(OP_I64_STORE8,  writeWatchpointInstrCallback);
-    wail.addInstructionParser(OP_I64_STORE16, writeWatchpointInstrCallback);
-    wail.addInstructionParser(OP_I64_STORE32, writeWatchpointInstrCallback);
-
-    wail.addInstructionParser(OP_SIMD, simdInstrCallback);
-    wail.addInstructionParser(OP_ATOMIC, atomicInstrCallback);
+        wail.addInstructionParser(OP_SIMD, simdInstrCallback);
+        wail.addInstructionParser(OP_ATOMIC, atomicInstrCallback);
+    }
 
     let memoryInstancePath;
 
@@ -753,23 +785,27 @@ const instrumentBinary = function(bufferSource) {
 
 
     wail.load(bufferSource);
-
     wail.parse();
 
+    const resultObj = {};
     const symObj = {};
 
-    const writeWpIndex = wail.getFunctionIndex(funcEntryWriteWatchpoint);
-    const readWpIndex =  wail.getFunctionIndex(funcEntryReadWatchpoint);
-    const configWpIndex = wail.getFunctionIndex(funcEntryConfigureWatchpoint);
+    if (instrumentLevel) {
+        const configWpIndex = wail.getFunctionIndex(funcEntryConfigureWatchpoint);
+        symObj[configWpIndex.i32()] = "_wp_config";
 
-    const resultObj = {};
+        if (instrumentLevel & ENABLE_WP_READ) {
+            const readWpIndex =  wail.getFunctionIndex(funcEntryReadWatchpoint);
+            symObj[readWpIndex.i32()] = "_wp_read";
+        }
+
+        if (instrumentLevel & ENABLE_WP_WRITE) {
+            const writeWpIndex = wail.getFunctionIndex(funcEntryWriteWatchpoint);
+            symObj[writeWpIndex.i32()] = "_wp_write";
+        }
+    }
 
     resultObj.buffer = wail.write();
-
-    symObj[writeWpIndex.i32()] = "_wp_write";
-    symObj[readWpIndex.i32()] = "_wp_read";
-    symObj[configWpIndex.i32()] = "_wp_config";
-
     resultObj.symbols = symObj;
     resultObj.memory = memoryInstancePath;
 

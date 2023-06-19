@@ -59,6 +59,13 @@ const storageGet = function(key, callback) {
     chrome.storage.local.get(key, callback);
 };
 
+loadOptions(function(extensionOptions) {
+    const extensionOptionsStr = JSON.stringify(extensionOptions);
+
+    const code = `const cetusOptions = ${extensionOptionsStr}`;
+    injectCode(code);
+});
+
 // TODO Replace with utility function
 storageGet("savedPatches", function(result) {
     if (result !== null) {
@@ -122,7 +129,10 @@ storageGet("savedPatches", function(result) {
 
                 const allCallbacksStr = JSON.stringify(allCallbacks);
 
-                const code = `const cetusPatches = ${injectPatchesStr}; const cetusCallbacks = ${allCallbacksStr};`;
+                const code = `
+const cetusPatches = ${injectPatchesStr};
+const cetusCallbacks = ${allCallbacksStr};
+`;
 
                 injectCode(code);
             }

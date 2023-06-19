@@ -42,6 +42,11 @@ class PopupExtension {
         this.symbols = {};
 
         this.unlocked = false;
+
+        let _this = this;
+        loadOptions(function(savedOptions) {
+            _this.options = savedOptions;
+        });
     }
 
     sendBGMessage(type, msgBody) {
@@ -73,7 +78,7 @@ class PopupExtension {
     }
 
     reset() {
-        updateBookmarkTable({});
+        updateBookmarkTable({}, this.options.enableWatchpoints);
 
         document.getElementById("restartBtn").click();            
 
@@ -97,6 +102,11 @@ class PopupExtension {
         closeStackTraceModal();
 
         this.unlocked = false;
+
+        let _this = this;
+        loadOptions(function(savedOptions) {
+            _this.options = savedOptions;
+        });
     }
 
     addBookmark(memAddr, memType) {
@@ -368,7 +378,7 @@ const bgMessageListener = function(msgRaw) {
         case "updateBookmarks":
             const bookmarks = msgBody.bookmarks;
 
-            updateBookmarkTable(bookmarks);
+            updateBookmarkTable(bookmarks, extension.options.enableWatchpoints);
 
             break;
         case "updateMemView":

@@ -722,7 +722,7 @@ const updateStringSearchResults = function(resultCount, resultObject) {
 	document.getElementById('stringResults').appendChild(table);
 }
 
-const updateBookmarkTable = function(bookmarks) {
+const updateBookmarkTable = function(bookmarks, wpFlags) {
 	const bookmarkMenu = document.getElementById('bookmarks');
 
 	// TODO Format this in a less gross way
@@ -757,14 +757,20 @@ const updateBookmarkTable = function(bookmarks) {
 	cell = row.insertCell();
 	cell.innerText = 'Value';
 
-	cell = row.insertCell();
-	cell.innerText = 'Freeze';
+    if (wpFlags & ENABLE_WP_WRITE) {
+        cell = row.insertCell();
+        cell.innerText = 'Freeze';
+    }
 
-	cell = row.insertCell();
-	cell.innerText = 'Read Watch';
+    if (wpFlags & ENABLE_WP_READ){
+        cell = row.insertCell();
+        cell.innerText = 'Read Watch';
+    }
 
-	cell = row.insertCell();
-	cell.innerText = 'Write Watch';
+    if (wpFlags & ENABLE_WP_WRITE) {
+        cell = row.insertCell();
+        cell.innerText = 'Write Watch';
+    }
 
 	cell = row.insertCell();
 
@@ -792,37 +798,43 @@ const updateBookmarkTable = function(bookmarks) {
 		const valueInput = createValueInput(address, formattedValue);
 		cell.appendChild(valueInput);
 
-		cell = row.insertCell();
+        if (wpFlags & ENABLE_WP_WRITE) {
+            cell = row.insertCell();
 
-		const freezeButton = createFreezeButton(address, value);
+            const freezeButton = createFreezeButton(address, value);
 
-		if (frozen) {
-			freezeButton.classList.add('button-checkbox--active');
-		}
+            if (frozen) {
+                freezeButton.classList.add('button-checkbox--active');
+            }
 
-		cell.appendChild(freezeButton);
+            cell.appendChild(freezeButton);
+        }
 
-		cell = row.insertCell();
+        if (wpFlags & ENABLE_WP_READ) {
+            cell = row.insertCell();
 
-		const readWatchButton = createWatchButton(address, value);
-		readWatchButton.onclick = readWatchButtonClick;
+            const readWatchButton = createWatchButton(address, value);
+            readWatchButton.onclick = readWatchButtonClick;
 
-		if (readWatch) {
-			readWatchButton.classList.add('button-checkbox--active');
-		}
+            if (readWatch) {
+                readWatchButton.classList.add('button-checkbox--active');
+            }
 
-		cell.appendChild(readWatchButton);
+            cell.appendChild(readWatchButton);
+        }
 
-		cell = row.insertCell();
+        if (wpFlags & ENABLE_WP_WRITE) {
+            cell = row.insertCell();
 
-		const writeWatchButton = createWatchButton(address, value);
-		writeWatchButton.onclick = writeWatchButtonClick;
+            const writeWatchButton = createWatchButton(address, value);
+            writeWatchButton.onclick = writeWatchButtonClick;
 
-		if (writeWatch) {
-			writeWatchButton.classList.add('button-checkbox--active');
-		}
+            if (writeWatch) {
+                writeWatchButton.classList.add('button-checkbox--active');
+            }
 
-		cell.appendChild(writeWatchButton);
+            cell.appendChild(writeWatchButton);
+        }
 
 		cell = row.insertCell();
 
