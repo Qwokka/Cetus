@@ -723,6 +723,22 @@ const Disassembler = class {
             case OP_F64_REINTERPRET_I64:
                 instruction.opstring = "f64.reinterpret/i64";
                 break;
+            case OP_I32_EXTEND8_S:
+                instruction.opstring = "i32.extend8_s";
+                break;
+            case OP_I32_EXTEND16_S:
+                instruction.opstring = "i32.extend16_s";
+                break;
+            case OP_I64_EXTEND8_S:
+                instruction.opstring = "i64.extend8_s";
+                break;
+            case OP_I64_EXTEND16_S:
+                instruction.opstring = "i64.extend16_s";
+                break;
+            case OP_I64_EXTEND32_S:
+                instruction.opstring = "i64.extend32_s";
+                break;
+            // TODO Handle BULK_MEMORY, SIMD, and ATOMIC instructions
             default:
                 throw "Invalid/unknown opcode " + instruction.opcode;
         }

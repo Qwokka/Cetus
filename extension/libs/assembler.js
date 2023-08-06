@@ -1034,6 +1034,22 @@ const Assembler = class {
             case "f64.reinterpret/i64":
                 this._output.copyBuffer([ OP_F64_REINTERPRET_I64 ]);
                 break;
+            case "i32.extend8_s":
+                this._output.copyBuffer([ OP_I32_EXTEND8_S ]);
+                break;
+            case "i32.extend16_s":
+                this._output.copyBuffer([ OP_I32_EXTEND16_S ]);
+                break;
+            case "i64.extend8_s":
+                this._output.copyBuffer([ OP_I64_EXTEND8_S ]);
+                break;
+            case "i64.extend16_s":
+                this._output.copyBuffer([ OP_I64_EXTEND16_S ]);
+                break;
+            case "i64.extend32_s":
+                this._output.copyBuffer([ OP_I64_EXTEND32_S ]);
+                break;
+            // TODO Handle BULK_MEMORY, SIMD, and ATOMIC instructions
             default:
                 throw new Error(`Bad instruction "${opText}"`);
         }
