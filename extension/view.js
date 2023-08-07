@@ -216,12 +216,17 @@ document.getElementById('functionFormSave').onclick = function(e) {
 
 	const binaryUrl = extension.url;
 
-	const patchOptions = {
+	const functionPatch = {
 		index: funcIndex,
 		bytes: funcBytes,
-		name: funcName,
-		url: binaryUrl
 	};
+
+    const patchOptions = {
+		name: funcName,
+        version: 2,
+		url: binaryUrl,
+        functionPatches: [ functionPatch ]
+    };
 
 	extension.savePatch(patchOptions);
 	closeSavePatchModal();

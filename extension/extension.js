@@ -261,14 +261,7 @@ class PopupExtension {
             const thisPatch = allPatches[i];
 
             if (thisPatch.name === patchName) {
-                const exportPatch = {};
-
-                exportPatch.name = thisPatch.name;
-                exportPatch.index = thisPatch.index;
-                exportPatch.bytes = thisPatch.bytes;
-                exportPatch.url = thisPatch.url;
-
-                return JSON.stringify(exportPatch);
+                return JSON.stringify(thisPatch);
             }
         }
     }
