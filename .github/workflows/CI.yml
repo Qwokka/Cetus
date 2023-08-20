@@ -23,11 +23,9 @@ jobs:
           run: |
             cd CetusCITests
             npm i
-        - name: Start Webserver
+        - name: Run Tests
           run: |
             cd CetusTestBinary/build
             python -m http.server 8080 &
-        - name: Run Tests
-          run: |
-            cd CetusCITests
+            cd ../../CetusCITests
             node index.js -d ../Cetus/
