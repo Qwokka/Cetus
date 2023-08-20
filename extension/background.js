@@ -140,7 +140,6 @@ class ExtensionInstance {
             chrome.tabs.sendMessage(this.contentTab.id, msg);
         }
         catch (e) {
-            alert(e.toString());
             // TODO Handle tab closed
             return;
         }
@@ -271,7 +270,7 @@ class ExtensionInstance {
             else {
                 msgBody.index = i;
                 msgBody.addr = 0;
-                msgBody.value = 0;
+                msgBody.value = convertToI64(0, "i32");
                 msgBody.size = 0;
                 msgBody.flags = 0;
             }
@@ -512,7 +511,7 @@ const popupMessageListener = function(msg) {
                 return;
             }
 
-            bgExtension.removeBookmark(removeMemAddr);
+            bgExtension.currentInstance().removeBookmark(removeMemAddr);
 
             break;
         case "modifyMemory":
@@ -530,7 +529,7 @@ const popupMessageListener = function(msg) {
 
             currentInstance.sendContentMessage("modifyMemory", newMsgBody);
 
-            const bookmark = bgExtension.currentInstance().bookmarks[modifyMemAddr];
+            const bookmark = bgExtension.currentInstance().instanceData.bookmarks[modifyMemAddr];
 
             if (typeof bookmark !== "object") {
                 return;
@@ -538,7 +537,7 @@ const popupMessageListener = function(msg) {
 
             bookmark.value = modifyMemValue;
 
-            bgExtension.currentInstance().bookmarks[modifyMemAddr] = bookmark;
+            bgExtension.currentInstance().instanceData.bookmarks[modifyMemAddr] = bookmark;
 
             const bookmarkFlags = bookmark.flags;
 

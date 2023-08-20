@@ -160,6 +160,10 @@ class Cetus {
     }
 
     queryMemory(address, memTypeStr) {
+        if (typeof address === "string") {
+            address = parseInt(address);
+        }
+
         const memory = this.unalignedMemory();
         const memType = getMemoryType(memTypeStr);
         const memSize = getElementSize(memTypeStr);
@@ -174,6 +178,10 @@ class Cetus {
     }
 
     queryMemoryChunk(address, length) {
+        if (typeof address === "string") {
+            address = parseInt(address);
+        }
+
         const memory = this.unalignedMemory();
         const memType = Uint8Array;
         const memSize = 1;
@@ -568,10 +576,15 @@ class Cetus {
 
     // Cetus API function for manually modifying memory
     modifyMemory(memAddr, memValue, memTypeStr = "i32") {
-        const memory = this.unalignedMemory(memTypeStr);
-        const memType = getMemoryType(memTypeStr);
+        if (typeof memAddr === "string") {
+            memAddr = parseInt(memAddr);
+        }
+        if (typeof memValue === "string") {
+            memValue = parseInt(memValue);
+        }
 
-        memAddr = parseInt(memAddr);
+        const memory = this.unalignedMemory();
+        const memType = getMemoryType(memTypeStr);
 
         if (memAddr < 0 || memAddr >= memory.length) {
             throw new RangeError("Address out of range in Cetus.modifyMemory()");
