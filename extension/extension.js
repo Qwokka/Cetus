@@ -352,6 +352,7 @@ const bgMessageListener = function(msgRaw) {
             updateStringSearchForm(instanceData.stringForm);
             updateSpeedhackForm(instanceData.speedhack);
             updateStackTraceTable(instanceData.stackTraces);
+            updateBookmarkTable(instanceData.bookmarks, extension.options.enableWatchpoints);
 
             updateInstances(msgBody.instances);
 
