@@ -50,8 +50,8 @@ class CetusInstanceContainer {
     }
 
     _validateIdentifier(identifier) {
-        if (!this._instances[identifier] instanceof Cetus) {
-            throw new Error("Requested invalid identifier " + identifier + " in CetusInstanceContainer.get()");
+        if (!(this._instances[identifier] instanceof Cetus)) {
+            throw new Error("Requested invalid identifier " + identifier + " in CetusInstanceContainer");
         }
     }
 
@@ -64,11 +64,15 @@ class CetusInstanceContainer {
     close(identifier) {
         this._validateIdentifier(identifier);
 
-        this._instances[identifier].sendExtensionMessage("reset");
+        this._instances[identifier].sendExtensionMessage("instanceQuit");
     }
 
     closeAll() {
         for (let i = 0; i < this._instances.length; i++) {
+            if (this._instances[i] === null) {
+                continue;
+            }
+
             this.close(i);
         }
     }

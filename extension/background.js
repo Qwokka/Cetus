@@ -84,6 +84,7 @@ class ExtensionInstance {
         };
     }
 
+    // TODO Is this used?
     reset() {
         this.instanceData = {
             initialized: false,
@@ -322,7 +323,6 @@ class BackgroundExtension {
                 bgExtension._popupChannel = channel;
 
                 bgExtension._popupChannel.onMessage.addListener(popupMessageListener);
-                bgExtension._popupChannel.onDisconnect.addListener(popupDisconnectListener);
             });
         }
         else {
@@ -383,6 +383,9 @@ class BackgroundExtension {
 
             this._popupChannel.postMessage(msgStr);
         }
+        else {
+            throw new Error("this._popupChannel closed prematurely");
+        }
     }
 
     addInstance(instanceId, pageUrl) {
@@ -438,6 +441,21 @@ class BackgroundExtension {
         }
 
         return result;
+    }
+
+    removeInstance(targetInstance) {
+        this.instances.splice(this.instances.indexOf(targetInstance), 1); 
+
+        if (this.instances.length > 0) {
+            this.instanceId = this.instances[0].instanceId;
+
+            this.popupRestore();
+        }
+        else {
+            this.instanceId = null;
+
+            this.sendPopupMessage(msgSource, "reset", {});
+        }
     }
 }
 
@@ -637,10 +655,6 @@ const popupMessageListener = function(msg) {
             bgExtension.popupRestore();
             break;
     }
-};
-
-const popupDisconnectListener = function() {
-    bgExtension._popupChannel = null;
 };
 
 bgExtension = new BackgroundExtension();
@@ -886,10 +900,10 @@ chrome.runtime.onMessage.addListener(function(msgRaw, msgSender) {
             });
 
             break;
-        case "reset":
-            targetInstance.reset();
+        case "instanceQuit":
+            bgExtension.removeInstance(targetInstance);
 
-            bgExtension.sendPopupMessage(msgSource, "reset");
+            bgExtension.sendPopupMessage(msgSource, "instanceQuit");
 
             break;
     }
