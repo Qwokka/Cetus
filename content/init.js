@@ -36,7 +36,7 @@ const ENABLE_WP_ALL   = ENABLE_WP_READ | ENABLE_WP_WRITE | ENABLE_WP_FREEZE;
 // returning the resulting binary
 const instrumentBinary = function(bufferSource) {
     let instrumentLevel = ENABLE_WP_ALL;
-    let wpCount = 5;
+    let wpCount = 3;
 
     if (typeof cetusOptions === "object") {
         if (typeof cetusOptions.enableWatchpoints === "string") {
