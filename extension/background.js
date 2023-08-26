@@ -14,11 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-const MAX_WATCHPOINTS = 1;
-
-const FLAG_WATCH_WRITE  = 1 << 0;
-const FLAG_WATCH_READ   = 1 << 1;
-const FLAG_FREEZE       = 1 << 2;
+const MAX_WATCHPOINTS = 10;
 
 class ExtensionInstance {
     constructor(instanceId, url) {
@@ -217,7 +213,7 @@ class ExtensionInstance {
         let matchIndex = null;
 
         for (let i = 0; i < MAX_WATCHPOINTS; i++) {
-            if (this.instanceData.watchpoints[i] == watchAddr) {
+            if (this.instanceData.watchpoints[i] === watchAddr) {
                 matchIndex = i;
                 break;
             }
@@ -226,17 +222,25 @@ class ExtensionInstance {
         // If this bookmark is not already in our watchpoint list,
         // add it. If necessary, remove the oldest watchpoint
         if (matchIndex === null) {
-            // We want to "shift" the oldest watchpoint away if we've hit capacity
-            while (this.instanceData.watchpoints.length >= MAX_WATCHPOINTS) {
-                const shiftedAddr = this.instanceData.watchpoints.shift();
-
-                // We also need to update the flags for the affected bookmark
-                this.instanceData.bookmarks[shiftedAddr].flags = 0;
+            let freeIndex = null;
+            for (let i = 0; i < MAX_WATCHPOINTS; i++) {
+                if (typeof this.instanceData.watchpoints[i] === "undefined") {
+                    freeIndex = i;
+                    break;
+                }
             }
 
-            this.instanceData.watchpoints.push(watchAddr);
+            if (freeIndex === null) {
+                // TODO Report this error to the user instead of failing silently
+                return;
+            }
+
+            this.instanceData.watchpoints[freeIndex] = watchAddr;
+            this._updateWatchpoint(freeIndex);
         }
         else {
+            this._updateWatchpoint(matchIndex);
+
             // If a watchpoint exists for this address and we are trying to
             // set flags to 0, just remove the watchpoint
             if (bookmarkFlags == 0) {
@@ -244,48 +248,41 @@ class ExtensionInstance {
             }
         }
 
-        this._updateWatchpoints();
         this.updateBookmarks();
     }
 
-    _updateWatchpoints() {
-        for (let i = 0; i < MAX_WATCHPOINTS; i++) {
-            const watchAddr = this.instanceData.watchpoints[i];
+    _updateWatchpoint(index) {
+        const watchAddr = this.instanceData.watchpoints[index];
 
-            const msgBody = {};
+        const msgBody = {};
 
-            if (typeof watchAddr !== "undefined") {
-                const bookmark = this.instanceData.bookmarks[watchAddr];
-
-                const memType = bookmark.memType;
-
-                const realValue = convertToI64(bookmark.value, memType);
-                const watchSize = getElementSize(memType);
-
-                msgBody.index = i;
-                msgBody.addr = watchAddr;
-                msgBody.value = realValue;
-                msgBody.size = watchSize;
-                msgBody.flags = bookmark.flags;
-            }
-            else {
-                msgBody.index = i;
-                msgBody.addr = 0;
-                msgBody.value = convertToI64(0, "i32");
-                msgBody.size = 0;
-                msgBody.flags = 0;
-            }
-
-            this.sendContentMessage("updateWatch", msgBody);
+        if (typeof watchAddr === "undefined") {
+            return;
         }
+
+        const bookmark = this.instanceData.bookmarks[watchAddr];
+
+        const memType = bookmark.memType;
+
+        const realValue = convertToI64(bookmark.value, memType);
+        const watchSize = getElementSize(memType);
+
+        msgBody.index = index;
+        msgBody.addr = watchAddr;
+        msgBody.value = realValue;
+        msgBody.size = watchSize;
+        msgBody.flags = bookmark.flags;
+
+        this.sendContentMessage("updateWatch", msgBody);
     }
 
     removeWatchpoint(memAddr) {
         for (let i = 0; i < MAX_WATCHPOINTS; i++) {
             if (this.instanceData.watchpoints[i] == memAddr) {
-                this.instanceData.watchpoints.splice(i, 1); 
+                this.instanceData.bookmarks[memAddr].flags = 0;
+                this._updateWatchpoint(i);
 
-                this._updateWatchpoints();
+                delete this.instanceData.watchpoints[i]
 
                 break;
             }
@@ -452,9 +449,9 @@ class BackgroundExtension {
             this.popupRestore();
         }
         else {
-            this.instanceId = null;
+            this.sendPopupMessage(instanceId, "reset", {});
 
-            this.sendPopupMessage(msgSource, "reset", {});
+            this.instanceId = null;
         }
     }
 }
@@ -893,7 +890,7 @@ chrome.runtime.onMessage.addListener(function(msgRaw, msgSender) {
                 savedTrace.push(savedFrame);
             }
 
-            bgExtension.addStackTrace(savedTrace);
+            bgExtension.getInstance(msgSource).addStackTrace(savedTrace);
 
             bgExtension.sendPopupMessage(msgSource, "watchPointHit", {
                 stackTrace: savedTrace

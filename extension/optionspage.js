@@ -4,9 +4,12 @@ const updateOptions = function(optionValues) {
 
     const selectLogLevel = document.getElementById("selectLogLevel");
     selectLogLevel.value = optionValues.logLevel;
+
+    const rangeWPCount = document.getElementById("rangeWPCount");
+    rangeWPCount.value = optionValues.value;
 }
 
-document.getElementById("buttonSaveOptions").onclick = function(e) {
+document.getElementById("buttonSaveOptions").onclick = function() {
     const newOptions = {};
 
     const selectLogLevel = document.getElementById("selectLogLevel");
@@ -15,7 +18,14 @@ document.getElementById("buttonSaveOptions").onclick = function(e) {
     const selectEnableWatch = document.getElementById("selectEnableWatchpoints");
     newOptions.enableWatchpoints = selectEnableWatch.value;
 
+    const rangeWPCount = document.getElementById("rangeWPCount");
+    newOptions.wpCount = rangeWPCount.value;
+
     saveOptions(newOptions);
+}
+
+document.getElementById("rangeWPCount").oninput = function(e) {
+    document.getElementById("outputWPCount").innerText = e.target.value;
 }
 
 loadOptions(updateOptions);

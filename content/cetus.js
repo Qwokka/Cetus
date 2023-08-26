@@ -14,15 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-const FLAG_WATCH_WRITE  = 1 << 0;
-const FLAG_WATCH_READ   = 1 << 1;
-const FLAG_FREEZE       = 1 << 2;
-
 const LOG_LEVEL_NONE  = 0;
 const LOG_LEVEL_DEBUG  = 1;
 const LOG_LEVEL_TRACE  = 2;
-
-const MAX_WATCHPOINTS   = 1;
 
 const MAX_SEARCH_RESULTS = 1000;
 

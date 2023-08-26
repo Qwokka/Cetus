@@ -14,13 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-const MAX_WATCHPOINTS = 1;
-
 const MAX_STACKTRACES = 10;
-
-const FLAG_WATCH_WRITE  = 1 << 0;
-const FLAG_WATCH_READ   = 1 << 1;
-const FLAG_FREEZE       = 1 << 2;
 
 class PopupExtension {
     constructor() {

@@ -17,11 +17,13 @@ limitations under the License.
 const ENABLE_WP_NONE  = 0;
 const ENABLE_WP_READ  = 1;
 const ENABLE_WP_WRITE = 2;
-const ENABLE_WP_ALL   = ENABLE_WP_READ | ENABLE_WP_WRITE;
+const ENABLE_WP_FREEZE = 4;
+const ENABLE_WP_ALL   = ENABLE_WP_READ | ENABLE_WP_WRITE | ENABLE_WP_FREEZE;
 
 const optionDefaults = {
     logLevel: 0,
-    enableWatchpoints: ENABLE_WP_ALL
+    enableWatchpoints: ENABLE_WP_ALL,
+    wpCount: 3,
 }
 
 const loadOptions = function(callback) {

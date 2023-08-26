@@ -394,7 +394,7 @@ const freezeButtonClick = function(e) {
 
 	msgBody.memAddr = memAddr;
 	msgBody.memValue = event.currentTarget.value;
-	msgBody.flags = FLAG_FREEZE;
+	msgBody.flags = ENABLE_WP_FREEZE;
 
 	extension.sendBGMessage('updateWatchpoint', msgBody);
 };
@@ -444,7 +444,7 @@ const writeWatchButtonClick = function(e) {
 
 	msgBody.memAddr = memAddr;
 	msgBody.memValue = event.currentTarget.value;
-	msgBody.flags = FLAG_WATCH_WRITE;
+	msgBody.flags = ENABLE_WP_WRITE;
 
 	extension.sendBGMessage('updateWatchpoint', msgBody);
 };
@@ -458,7 +458,7 @@ const readWatchButtonClick = function(e) {
 
 	msgBody.memAddr = memAddr;
 	msgBody.memValue = event.currentTarget.value;
-	msgBody.flags = FLAG_WATCH_READ;
+	msgBody.flags = ENABLE_WP_READ;
 
 	extension.sendBGMessage('updateWatchpoint', msgBody);
 };
@@ -787,9 +787,9 @@ const updateBookmarkTable = function(bookmarks, wpFlags) {
 		const value = bookmark.value;
 		const memType = bookmark.memType;
 
-		const frozen = (bookmark.flags & FLAG_FREEZE) != 0;
-		const readWatch = (bookmark.flags & FLAG_WATCH_READ) != 0;
-		const writeWatch = (bookmark.flags & FLAG_WATCH_WRITE) != 0;
+		const frozen = (bookmark.flags & ENABLE_WP_FREEZE) != 0;
+		const readWatch = (bookmark.flags & ENABLE_WP_READ) != 0;
+		const writeWatch = (bookmark.flags & ENABLE_WP_WRITE) != 0;
 
 		row = tbody.insertRow();
 

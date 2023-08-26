@@ -23,19 +23,38 @@ window.onbeforeunload = function() {
     }
 };
 
+const MAX_WATCHPOINTS = 10;
+
 const ENABLE_WP_NONE  = 0;
 const ENABLE_WP_READ  = 1;
 const ENABLE_WP_WRITE = 2;
-const ENABLE_WP_ALL   = ENABLE_WP_READ | ENABLE_WP_WRITE;
+const ENABLE_WP_FREEZE = 4;
+const ENABLE_WP_ALL   = ENABLE_WP_READ | ENABLE_WP_WRITE | ENABLE_WP_FREEZE;
 
 // This function performs the main instrumentation logic of taking a
 // a WebAssembly binary, making necessary additions/modifications, and
 // returning the resulting binary
 const instrumentBinary = function(bufferSource) {
     let instrumentLevel = ENABLE_WP_ALL;
+    let wpCount = 5;
 
-    if (typeof cetusOptions === "object" && typeof cetusOptions.enableWatchpoints === "string") {
-        instrumentLevel = parseInt(cetusOptions.enableWatchpoints);
+    if (typeof cetusOptions === "object") {
+        if (typeof cetusOptions.enableWatchpoints === "string") {
+            instrumentLevel = parseInt(cetusOptions.enableWatchpoints);
+        }
+        if (typeof cetusOptions.wpCount === "string") {
+            wpCount = parseInt(cetusOptions.wpCount);
+        }
+    }
+
+    if (wpCount > MAX_WATCHPOINTS || wpCount < 0) {
+        colorError("Invalid WP count!");
+        return;
+    }
+
+    if (wpCount == 0 && instrumentLevel) {
+        colorError("WP count is 0 but watchpoints are not disabled!");
+        return;
     }
 
     if (cetusInstances.logLevel >= LOG_LEVEL_DEBUG) {
@@ -44,50 +63,15 @@ const instrumentBinary = function(bufferSource) {
 
     const wail = new WailParser();
 
-    let funcEntryConfigureWatchpoint;
-    let funcEntryReadWatchpoint;
-    let funcEntryWriteWatchpoint;
+    // TODO Would this be cleaner/quicker as a TABLE entry?
+    const wpConfigs = [];
+    let funcEntryReadWatchpointRouter;
+    let funcEntryWriteWatchpointRouter;
 
     if (instrumentLevel) {
         const funcTypeWatchCallback = wail.addTypeEntry({
             form: "func",
             params: [],
-        });
-
-        // See the actual code entry for this function for a full explanation of why
-        // we need to split value into upper and lower halves
-        const funcTypeAddWatchpoint = wail.addTypeEntry({
-            form: "func",
-            // addr, value_lower, value_upper, size, flags
-            params: [ "i32", "i32", "i32", "i32", "i32" ],
-        });
-
-        funcEntryConfigureWatchpoint = wail.addFunctionEntry({
-            type: funcTypeAddWatchpoint,
-        });
-
-        const globalWatchAddr = wail.addGlobalEntry({
-            globalType: {
-                contentType: "i32",
-                mutability: true,
-            },
-            initExpr: [ OP_I32_CONST, VarUint32(0x00), OP_END ]
-        });
-
-        const globalWatchVal = wail.addGlobalEntry({
-            globalType: {
-                contentType: "i64",
-                mutability: true,
-            },
-            initExpr: [ OP_I64_CONST, VarUint32(0x00), OP_END ]
-        });
-
-        const globalWatchSize = wail.addGlobalEntry({
-            globalType: {
-                contentType: "i32",
-                mutability: true,
-            },
-            initExpr: [ OP_I32_CONST, VarUint32(0x00), OP_END ]
         });
 
         const globalWatchFlags = wail.addGlobalEntry({
@@ -98,66 +82,183 @@ const instrumentBinary = function(bufferSource) {
             initExpr: [ OP_I32_CONST, VarUint32(0x00), OP_END ]
         });
 
-        wail.addExportEntry(funcEntryConfigureWatchpoint, {
-            fieldStr: "addWatch",
-            kind: "func",
+        const globalAreWriteWatchpointsEnabled = wail.addGlobalEntry({
+            globalType: {
+                contentType: "i32",
+                mutability: true,
+            },
+            initExpr: [ OP_I32_CONST, VarUint32(0x00), OP_END ]
         });
 
-        //
-        // This function is called to configure a watchpoint by setting the associated
-        // global variables.
-        // Once mutable external global variables are widely supported by browsers, this
-        // can be done from Javascript and this function can be removed
-        //
-        // Exported functions cannot have i64/f64 as arguments at time of writing. So in
-        // order to support 64-bit watchpoint values, we need to pass the upper/lower
-        // 32-bits as separate arguments. We then recombine them and set globalWatchVal
-        //
-        // Arguments:
-        //  arg_0 = watch address
-        //  arg_1 = watch value lower
-        //  arg_2 = watch value upper
-        //  arg_3 = watch size
-        //  arg_4 = watch flags
-        //
-        wail.addCodeEntry(funcEntryConfigureWatchpoint, {
-            locals: [],
-            code: [
-                // globalWatchAddr = arg_0
-                OP_GET_LOCAL, VarUint32(0x00),
-                OP_SET_GLOBAL, globalWatchAddr.varUint32(),
-
-                // globalWatchVal = (arg_1 | (arg_2 << 32))
-                OP_GET_LOCAL, VarUint32(0x01),
-                OP_I64_EXTEND_U_I32,
-                OP_GET_LOCAL, VarUint32(0x02),
-                OP_I64_EXTEND_U_I32,
-                OP_I64_CONST, VarUint32(0x20),
-                OP_I64_SHL,
-                OP_I64_OR,
-                OP_SET_GLOBAL, globalWatchVal.varUint32(),
-
-                // globalWatchSize = arg_3
-                OP_GET_LOCAL, VarUint32(0x03),
-                OP_SET_GLOBAL, globalWatchSize.varUint32(),
-
-                // globalWatchFlags = arg_4
-                OP_GET_LOCAL, VarUint32(0x04),
-                OP_SET_GLOBAL, globalWatchFlags.varUint32(),
-                OP_RETURN,
-                OP_END,
-            ]
+        const globalAreReadWatchpointsEnabled = wail.addGlobalEntry({
+            globalType: {
+                contentType: "i32",
+                mutability: true,
+            },
+            initExpr: [ OP_I32_CONST, VarUint32(0x00), OP_END ]
         });
+
+        // See the actual code entry for this function for a full explanation of why
+        // we need to split value into upper and lower halves
+        const funcTypeConfigWatchpoint = wail.addTypeEntry({
+            form: "func",
+            // addr, value_lower, value_upper, size, flags
+            params: [ "i32", "i32", "i32", "i32", "i32" ],
+        });
+
+        for (let i = 0; i < wpCount; i++) {
+            const thisWP = {};
+
+            thisWP.globalAddr = wail.addGlobalEntry({
+                globalType: {
+                    contentType: "i32",
+                    mutability: true,
+                },
+                initExpr: [ OP_I32_CONST, VarUint32(0x00), OP_END ]
+            });
+
+            thisWP.globalVal = wail.addGlobalEntry({
+                globalType: {
+                    contentType: "i64",
+                    mutability: true,
+                },
+                initExpr: [ OP_I64_CONST, VarUint32(0x00), OP_END ]
+            });
+
+            thisWP.globalSize = wail.addGlobalEntry({
+                globalType: {
+                    contentType: "i32",
+                    mutability: true,
+                },
+                initExpr: [ OP_I32_CONST, VarUint32(0x00), OP_END ]
+            });
+
+            const thisFuncEntry = wail.addFunctionEntry({
+                type: funcTypeConfigWatchpoint,
+            });
+
+            wail.addExportEntry(thisFuncEntry, {
+                fieldStr: "configWatch" + i,
+                kind: "func",
+            });
+
+            let allReadFlags = 0;
+            let allWriteFlags = 0;
+
+            for (let i = 0; i < wpCount; i++) {
+                allReadFlags |= ENABLE_WP_READ << (3 * i);
+                allWriteFlags |= (ENABLE_WP_WRITE | ENABLE_WP_FREEZE) << (3 * i);
+            }
+
+            //
+            // This function is called to configure a watchpoint by setting the associated
+            // global variables.
+            // Once mutable external global variables are widely supported by browsers, this
+            // can be done from Javascript and this function can be removed
+            //
+            // Exported functions cannot have i64/f64 as arguments at time of writing. So in
+            // order to support 64-bit watchpoint values, we need to pass the upper/lower
+            // 32-bits as separate arguments. We then recombine them and set thisWatchVal
+            //
+            // Arguments:
+            //  local_0 = watch address
+            //  local_1 = watch value lower
+            //  local_2 = watch value upper
+            //  local_3 = watch size
+            //  local_4 = watch flags
+            //
+            wail.addCodeEntry(thisFuncEntry, {
+                locals: [ "i32", ],
+                code: [
+                    // globalAddr = arg_0
+                    OP_GET_LOCAL, VarUint32(0x00),
+                    OP_SET_GLOBAL, thisWP.globalAddr.varUint32(),
+
+                    // globalVal = (arg_1 | (arg_2 << 32))
+                    OP_GET_LOCAL, VarUint32(0x01),
+                    OP_I64_EXTEND_U_I32,
+                    OP_GET_LOCAL, VarUint32(0x02),
+                    OP_I64_EXTEND_U_I32,
+                    OP_I64_CONST, VarUint32(0x20),
+                    OP_I64_SHL,
+                    OP_I64_OR,
+                    OP_SET_GLOBAL, thisWP.globalVal.varUint32(),
+
+                    // globalSize = arg_3
+                    OP_GET_LOCAL, VarUint32(0x03),
+                    OP_SET_GLOBAL, thisWP.globalSize.varUint32(),
+
+                    // Remove the old flags for this watchpoint
+                    // zeroMask = (ENABLE_WP_ALL << (3 * i)) ^ 0x3FFFFFFF
+                    // globalWatchFlags = globalWatchFlags & zeroMask
+                    OP_I32_CONST, VarUint32((ENABLE_WP_ALL << (3 * i)) ^ 0x3FFFFFFF),
+                    OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                    OP_I32_AND,
+                    OP_SET_GLOBAL, globalWatchFlags.varUint32(),
+            
+                    // Set the new flags
+                    // globalWatchFlags = globalWatchFlags | (arg_4 << (3 * i)
+                    OP_GET_LOCAL, VarUint32(0x04),
+                    OP_I32_CONST, VarUint32(ENABLE_WP_ALL),
+                    OP_I32_AND,
+                    OP_I32_CONST, VarUint32(3 * i),
+                    OP_I32_SHL,
+                    OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                    OP_I32_OR,
+                    OP_SET_GLOBAL, globalWatchFlags.varUint32(),
+
+                    // Set globalAreReadWatchpointsEnabled
+                    OP_I32_CONST, VarUint32(0x00),
+                    OP_SET_LOCAL, VarUint32(0x00),
+                    OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                    OP_I32_CONST, VarUint32(allReadFlags),
+                    OP_I32_AND,
+                    OP_IF, 0x40,
+                        OP_I32_CONST, VarUint32(0x01),
+                        OP_SET_LOCAL, VarUint32(0x00),
+                    OP_END,
+                    OP_GET_LOCAL, VarUint32(0x00),
+                    OP_SET_GLOBAL, globalAreReadWatchpointsEnabled.varUint32(),
+
+                    // Set globalAreWriteWatchpointsEnabled
+                    OP_I32_CONST, VarUint32(0x00),
+                    OP_SET_LOCAL, VarUint32(0x00),
+                    OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                    OP_I32_CONST, VarUint32(allWriteFlags),
+                    OP_I32_AND,
+                    OP_IF, 0x40,
+                        OP_I32_CONST, VarUint32(0x01),
+                        OP_SET_LOCAL, VarUint32(0x00),
+                    OP_END,
+                    OP_GET_LOCAL, VarUint32(0x00),
+                    OP_SET_GLOBAL, globalAreWriteWatchpointsEnabled.varUint32(),
+
+                    OP_RETURN,
+                    OP_END,
+                ]
+            });
+
+            thisWP.funcEntry = thisFuncEntry;
+
+            wpConfigs.push(thisWP);
+        }
 
         if (instrumentLevel & ENABLE_WP_WRITE) {
-            const funcTypeWriteWatchpoint = wail.addTypeEntry({
+            const funcTypeWriteWatchpointRouter = wail.addTypeEntry({
                 form: "func",
                 params: [],
             });
 
-            funcEntryWriteWatchpoint = wail.addFunctionEntry({
-                type: funcTypeWriteWatchpoint,
+            const funcTypeWriteWatchpoint = wail.addTypeEntry({
+                form: "func",
+                params: [ "i32", "i64", "i32", "i32" ],
+                returnType: "i64",
             });
+
+            funcEntryWriteWatchpointRouter = wail.addFunctionEntry({
+                type: funcTypeWriteWatchpointRouter,
+            });
+
             const funcEntryWriteWatchpoint8Bit = wail.addFunctionEntry({
                 type: funcTypeWriteWatchpoint,
             });
@@ -181,221 +282,253 @@ const instrumentBinary = function(bufferSource) {
                 type: funcTypeWatchCallback
             });
 
+            const codeRoutes = [];
+
+            for (let i = 0; i < wpCount; i++) {
+                const thisConfig = wpConfigs[i];
+
+                const thisRoute = [
+                    OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                    OP_I32_CONST, VarUint32((ENABLE_WP_WRITE | ENABLE_WP_FREEZE) << (3 * i)),
+                    OP_I32_AND,
+                    OP_IF, 0x40,
+                        OP_GET_GLOBAL, thisConfig.globalSize.varUint32(),
+                        OP_TEE_LOCAL, VarUint32(0x00),
+                        OP_I32_CONST, VarUint32(0x01),
+                        OP_I32_EQ,
+                        OP_IF, 0x40,
+                            OP_GET_GLOBAL, thisConfig.globalAddr.varUint32(),
+                            OP_GET_GLOBAL, thisConfig.globalVal.varUint32(),
+                            OP_GET_GLOBAL, thisConfig.globalSize.varUint32(),
+                            OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                            OP_I32_CONST, VarUint32(3 * i),
+                            OP_I32_SHR_U,
+                            OP_CALL, funcEntryWriteWatchpoint8Bit.varUint32(),
+                            OP_SET_GLOBAL, thisConfig.globalVal.varUint32(),
+                            OP_BR, VarUint32(0x01),
+                        OP_END,
+                        OP_GET_LOCAL, VarUint32(0x00),
+                        OP_I32_CONST, VarUint32(0x02),
+                        OP_I32_EQ,
+                        OP_IF, 0x40,
+                            OP_GET_GLOBAL, thisConfig.globalAddr.varUint32(),
+                            OP_GET_GLOBAL, thisConfig.globalVal.varUint32(),
+                            OP_GET_GLOBAL, thisConfig.globalSize.varUint32(),
+                            OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                            OP_I32_CONST, VarUint32(3 * i),
+                            OP_I32_SHR_U,
+                            OP_CALL, funcEntryWriteWatchpoint16Bit.varUint32(),
+                            OP_SET_GLOBAL, thisConfig.globalVal.varUint32(),
+                            OP_BR, VarUint32(0x01),
+                        OP_END,
+                        OP_GET_LOCAL, VarUint32(0x00),
+                        OP_I32_CONST, VarUint32(0x04),
+                        OP_I32_EQ,
+                        OP_IF, 0x40,
+                            OP_GET_GLOBAL, thisConfig.globalAddr.varUint32(),
+                            OP_GET_GLOBAL, thisConfig.globalVal.varUint32(),
+                            OP_GET_GLOBAL, thisConfig.globalSize.varUint32(),
+                            OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                            OP_I32_CONST, VarUint32(3 * i),
+                            OP_I32_SHR_U,
+                            OP_CALL, funcEntryWriteWatchpoint32Bit.varUint32(),
+                            OP_SET_GLOBAL, thisConfig.globalVal.varUint32(),
+                            OP_BR, VarUint32(0x01),
+                        OP_END,
+                        OP_GET_LOCAL, VarUint32(0x00),
+                        OP_I32_CONST, VarUint32(0x08),
+                        OP_I32_EQ,
+                        OP_IF, 0x40,
+                            OP_GET_GLOBAL, thisConfig.globalAddr.varUint32(),
+                            OP_GET_GLOBAL, thisConfig.globalVal.varUint32(),
+                            OP_GET_GLOBAL, thisConfig.globalSize.varUint32(),
+                            OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                            OP_I32_CONST, VarUint32(3 * i),
+                            OP_I32_SHR_U,
+                            OP_CALL, funcEntryWriteWatchpoint64Bit.varUint32(),
+                            OP_SET_GLOBAL, thisConfig.globalVal.varUint32(),
+                            OP_BR, VarUint32(0x01),
+                        OP_END,
+                    OP_END,
+                ];
+
+                codeRoutes.push(thisRoute);
+            }
+
+            const routerCode = [];
+
+            for (let i = 0; i < wpCount; i++) {
+                const thisRoute = codeRoutes[i];
+                for (let j = 0; j < thisRoute.length; j++) {
+                    routerCode.push(thisRoute[j]);
+                }
+            }
+
+            routerCode.push(OP_RETURN);
+            routerCode.push(OP_END);
+
             //
-            // This function routes a watchpoint check to the correct handler depending on
-            // the size of the configured watchpoint (1, 2, 4, or 8 bytes)
+            // This function routes a watchpoint check to the correct handler depending on the size of the configured watchpoint
+            // (1, 2, 4, or 8 bytes)
             //
-            wail.addCodeEntry(funcEntryWriteWatchpoint, {
+            wail.addCodeEntry(funcEntryWriteWatchpointRouter, {
                 locals: [ "i32" ],
-                code: [
-                    OP_GET_GLOBAL, globalWatchSize.varUint32(),
-                    OP_TEE_LOCAL, VarUint32(0x00),
-                    OP_I32_CONST, VarUint32(0x01),
-                    OP_I32_EQ,
-                    OP_IF, 0x40,
-                        OP_CALL, funcEntryWriteWatchpoint8Bit.varUint32(),
-                        OP_RETURN,
-                    OP_END,
-                    OP_GET_LOCAL, VarUint32(0x00),
-                    OP_I32_CONST, VarUint32(0x02),
-                    OP_I32_EQ,
-                    OP_IF, 0x40,
-                        OP_CALL, funcEntryWriteWatchpoint16Bit.varUint32(),
-                        OP_RETURN,
-                    OP_END,
-                    OP_GET_LOCAL, VarUint32(0x00),
-                    OP_I32_CONST, VarUint32(0x04),
-                    OP_I32_EQ,
-                    OP_IF, 0x40,
-                        OP_CALL, funcEntryWriteWatchpoint32Bit.varUint32(),
-                        OP_RETURN,
-                    OP_END,
-                    OP_GET_LOCAL, VarUint32(0x00),
-                    OP_I32_CONST, VarUint32(0x08),
-                    OP_I32_EQ,
-                    OP_IF, 0x40,
-                        OP_CALL, funcEntryWriteWatchpoint64Bit.varUint32(),
-                        OP_RETURN,
-                    OP_END,
-                    OP_RETURN,
-                    OP_END,
-                ]
+                code: routerCode
             });
 
+            //
+            // Arguments:
+            //  local_0 = watch addr
+            //  local_1 = watch value
+            //  local_2 = watch size
+            //  local_3 = watch flags
+            //
+            // Returns the current value of the watchpoint
+            //
+            // TODO This would be more correct if it triggered the write watchpoint even when writing the same value
             wail.addCodeEntry(funcEntryWriteWatchpoint8Bit, {
-                locals: [],
+                locals: [ "i64" ],
                 code: [
-                    // We have already checked that globalWatchAddr != 0 (See
-                    // writeWatchpointInstrCallback) so we start by making sure the
+                    // We have already checked that globalWatchAddr != 0 so we start by making sure the
                     // value of our watched address has changed
-                    OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                    OP_GET_LOCAL, VarUint32(0x00),
                     OP_I64_LOAD8_U, VarUint32(0x00), VarUint32(0x00),
-                    OP_GET_GLOBAL, globalWatchVal.varUint32(),
+                    OP_TEE_LOCAL, VarUint32(0x04),
+                    OP_GET_LOCAL, VarUint32(0x01),
                     OP_I64_NE,
                     OP_IF, 0x40,
                         // If our watched value has changed since we last looked,
                         // we check which flags are set for our watchpoint
-                        OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                        OP_I32_CONST, VarUint32(0x01),
+                        OP_GET_LOCAL, VarUint32(0x03),
+                        OP_I32_CONST, VarUint32(ENABLE_WP_WRITE),
                         OP_I32_AND,
                         OP_IF, 0x40,
                             // WRITE flag is set, trigger imported callback
                             OP_CALL, importWriteWatchFunc.varUint32(),
-                            OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                            OP_I32_CONST, VarUint32(0x04),
-                            OP_I32_AND,
-                            OP_I32_CONST, VarUint32(0x00),
-                            OP_I32_EQ,
-                            OP_IF, 0x40,
-                                OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                                OP_I64_LOAD8_U, VarUint32(0x00), VarUint32(0x00),
-                                OP_SET_GLOBAL, globalWatchVal.varUint32(),
-                            OP_END,
                         OP_END,
-                        OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                        OP_I32_CONST, VarUint32(0x04),
+                        OP_GET_LOCAL, VarUint32(0x03),
+                        OP_I32_CONST, VarUint32(ENABLE_WP_FREEZE),
                         OP_I32_AND,
                         OP_IF, 0x40,
                             // FREEZE flag is set, revert the value
-                            OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                            OP_GET_GLOBAL, globalWatchVal.varUint32(),
+                            OP_GET_LOCAL, VarUint32(0x00),
+                            OP_GET_LOCAL, VarUint32(0x01),
+                            OP_TEE_LOCAL, VarUint32(0x04),
                             OP_I64_STORE8, VarUint32(0x00), VarUint32(0x00),
                         OP_END,
                     OP_END,
+                    OP_GET_LOCAL, VarUint32(0x04),
                     OP_RETURN,
                     OP_END,
                 ]
             });
 
             wail.addCodeEntry(funcEntryWriteWatchpoint16Bit, {
-                locals: [],
+                locals: [ "i64" ],
                 code: [
-                    // We have already checked that globalWatchAddr != 0 (See
-                    // writeWatchpointInstrCallback) so we start by making sure the
+                    // We have already checked that globalWatchAddr != 0 so we start by making sure the
                     // value of our watched address has changed
-                    OP_GET_GLOBAL, globalWatchAddr.varUint32(),
+                    OP_GET_LOCAL, VarUint32(0x00),
                     OP_I64_LOAD16_U, VarUint32(0x00), VarUint32(0x00),
-                    OP_GET_GLOBAL, globalWatchVal.varUint32(),
+                    OP_TEE_LOCAL, VarUint32(0x04),
+                    OP_GET_LOCAL, VarUint32(0x01),
                     OP_I64_NE,
                     OP_IF, 0x40,
                         // If our watched value has changed since we last looked,
                         // we check which flags are set for our watchpoint
-                        OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                        OP_I32_CONST, VarUint32(0x01),
+                        OP_GET_LOCAL, VarUint32(0x03),
+                        OP_I32_CONST, VarUint32(ENABLE_WP_WRITE),
                         OP_I32_AND,
                         OP_IF, 0x40,
                             // WRITE flag is set, trigger imported callback
                             OP_CALL, importWriteWatchFunc.varUint32(),
-                            OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                            OP_I32_CONST, VarUint32(0x04),
-                            OP_I32_AND,
-                            OP_I32_CONST, VarUint32(0x00),
-                            OP_I32_EQ,
-                            OP_IF, 0x40,
-                                OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                                OP_I64_LOAD16_U, VarUint32(0x00), VarUint32(0x00),
-                                OP_SET_GLOBAL, globalWatchVal.varUint32(),
-                            OP_END,
                         OP_END,
-                        OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                        OP_I32_CONST, VarUint32(0x04),
+                        OP_GET_LOCAL, VarUint32(0x03),
+                        OP_I32_CONST, VarUint32(ENABLE_WP_FREEZE),
                         OP_I32_AND,
                         OP_IF, 0x40,
                             // FREEZE flag is set, revert the value
-                            OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                            OP_GET_GLOBAL, globalWatchVal.varUint32(),
+                            OP_GET_LOCAL, VarUint32(0x00),
+                            OP_GET_LOCAL, VarUint32(0x01),
+                            OP_TEE_LOCAL, VarUint32(0x04),
                             OP_I64_STORE16, VarUint32(0x00), VarUint32(0x00),
                         OP_END,
                     OP_END,
+                    OP_GET_LOCAL, VarUint32(0x04),
                     OP_RETURN,
                     OP_END,
                 ]
             });
+
             wail.addCodeEntry(funcEntryWriteWatchpoint32Bit, {
-                locals: [],
+                locals: [ "i64" ],
                 code: [
-                    // We have already checked that globalWatchAddr != 0 (See
-                    // writeWatchpointInstrCallback) so we start by making sure the
+                    // We have already checked that globalWatchAddr != 0 so we start by making sure the
                     // value of our watched address has changed
-                    OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                    OP_I64_LOAD32_U, VarUint32(0x01), VarUint32(0x00),
-                    OP_GET_GLOBAL, globalWatchVal.varUint32(),
+                    OP_GET_LOCAL, VarUint32(0x00),
+                    OP_I64_LOAD32_U, VarUint32(0x00), VarUint32(0x00),
+                    OP_TEE_LOCAL, VarUint32(0x04),
+                    OP_GET_LOCAL, VarUint32(0x01),
                     OP_I64_NE,
                     OP_IF, 0x40,
                         // If our watched value has changed since we last looked,
                         // we check which flags are set for our watchpoint
-                        OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                        OP_I32_CONST, VarUint32(0x01),
+                        OP_GET_LOCAL, VarUint32(0x03),
+                        OP_I32_CONST, VarUint32(ENABLE_WP_WRITE),
                         OP_I32_AND,
                         OP_IF, 0x40,
                             // WRITE flag is set, trigger imported callback
                             OP_CALL, importWriteWatchFunc.varUint32(),
-                            OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                            OP_I32_CONST, VarUint32(0x04),
-                            OP_I32_AND,
-                            OP_I32_CONST, VarUint32(0x00),
-                            OP_I32_EQ,
-                            OP_IF, 0x40,
-                                OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                                OP_I64_LOAD32_U, VarUint32(0x01), VarUint32(0x00),
-                                OP_SET_GLOBAL, globalWatchVal.varUint32(),
-                            OP_END,
                         OP_END,
-                        OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                        OP_I32_CONST, VarUint32(0x04),
+                        OP_GET_LOCAL, VarUint32(0x03),
+                        OP_I32_CONST, VarUint32(ENABLE_WP_FREEZE),
                         OP_I32_AND,
                         OP_IF, 0x40,
                             // FREEZE flag is set, revert the value
-                            OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                            OP_GET_GLOBAL, globalWatchVal.varUint32(),
-                            OP_I64_STORE32, VarUint32(0x01), VarUint32(0x00),
+                            OP_GET_LOCAL, VarUint32(0x00),
+                            OP_GET_LOCAL, VarUint32(0x01),
+                            OP_TEE_LOCAL, VarUint32(0x04),
+                            OP_I64_STORE32, VarUint32(0x00), VarUint32(0x00),
                         OP_END,
                     OP_END,
+                    OP_GET_LOCAL, VarUint32(0x04),
                     OP_RETURN,
                     OP_END,
                 ]
             });
 
             wail.addCodeEntry(funcEntryWriteWatchpoint64Bit, {
-                locals: [],
+                locals: [ "i64" ],
                 code: [
-                    // We have already checked that globalWatchAddr != 0 (See
-                    // writeWatchpointInstrCallback) so we start by making sure the
+                    // We have already checked that globalWatchAddr != 0 so we start by making sure the
                     // value of our watched address has changed
-                    OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                    OP_I64_LOAD, VarUint32(0x01), VarUint32(0x00),
-                    OP_GET_GLOBAL, globalWatchVal.varUint32(),
+                    OP_GET_LOCAL, VarUint32(0x00),
+                    OP_I64_LOAD, VarUint32(0x00), VarUint32(0x00),
+                    OP_TEE_LOCAL, VarUint32(0x04),
+                    OP_GET_LOCAL, VarUint32(0x01),
                     OP_I64_NE,
                     OP_IF, 0x40,
                         // If our watched value has changed since we last looked,
                         // we check which flags are set for our watchpoint
-                        OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                        OP_I32_CONST, VarUint32(0x01),
+                        OP_GET_LOCAL, VarUint32(0x03),
+                        OP_I32_CONST, VarUint32(ENABLE_WP_WRITE),
                         OP_I32_AND,
                         OP_IF, 0x40,
                             // WRITE flag is set, trigger imported callback
                             OP_CALL, importWriteWatchFunc.varUint32(),
-                            OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                            OP_I32_CONST, VarUint32(0x04),
-                            OP_I32_AND,
-                            OP_I32_CONST, VarUint32(0x00),
-                            OP_I32_EQ,
-                            OP_IF, 0x40,
-                                OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                                OP_I64_LOAD, VarUint32(0x01), VarUint32(0x00),
-                                OP_SET_GLOBAL, globalWatchVal.varUint32(),
-                            OP_END,
                         OP_END,
-                        OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                        OP_I32_CONST, VarUint32(0x04),
+                        OP_GET_LOCAL, VarUint32(0x03),
+                        OP_I32_CONST, VarUint32(ENABLE_WP_FREEZE),
                         OP_I32_AND,
                         OP_IF, 0x40,
                             // FREEZE flag is set, revert the value
-                            OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                            OP_GET_GLOBAL, globalWatchVal.varUint32(),
-                            OP_I64_STORE, VarUint32(0x01), VarUint32(0x00),
+                            OP_GET_LOCAL, VarUint32(0x00),
+                            OP_GET_LOCAL, VarUint32(0x01),
+                            OP_TEE_LOCAL, VarUint32(0x04),
+                            OP_I64_STORE, VarUint32(0x00), VarUint32(0x00),
                         OP_END,
                     OP_END,
+                    OP_GET_LOCAL, VarUint32(0x04),
                     OP_RETURN,
                     OP_END,
                 ]
@@ -403,13 +536,22 @@ const instrumentBinary = function(bufferSource) {
         }
 
         if (instrumentLevel & ENABLE_WP_READ) {
-            const funcTypeReadWatchpoint = wail.addTypeEntry({
+            const funcTypeReadWatchpointRouter = wail.addTypeEntry({
                 form: "func",
                 params: [ "i32", "i32", "i32" ],
                 returnType: "i32",
             });
 
-            funcEntryReadWatchpoint = wail.addFunctionEntry({
+            const funcTypeReadWatchpoint = wail.addTypeEntry({
+                form: "func",
+                params: [ "i32", "i32", "i32", "i32", "i32" ],
+            });
+
+            funcEntryReadWatchpointRouter = wail.addFunctionEntry({
+                type: funcTypeReadWatchpointRouter,
+            });
+
+            const funcEntryReadWatchpoint = wail.addFunctionEntry({
                 type: funcTypeReadWatchpoint,
             });
 
@@ -418,6 +560,61 @@ const instrumentBinary = function(bufferSource) {
                 fieldStr: "readWatchCallback",
                 kind: "func",
                 type: funcTypeWatchCallback
+            });
+
+            const codeRoutes = [];
+
+            for (let i = 0; i < wpCount; i++) {
+                const thisConfig = wpConfigs[i];
+
+                const thisRoute = [
+                    OP_GET_GLOBAL, globalWatchFlags.varUint32(),
+                    OP_I32_CONST, VarUint32(ENABLE_WP_READ << (3 * i)),
+                    OP_I32_AND,
+                    OP_IF, 0x40,
+                        OP_GET_LOCAL, VarUint32(0x00),
+                        OP_GET_LOCAL, VarUint32(0x01),
+                        OP_GET_LOCAL, VarUint32(0x02),
+                        OP_GET_GLOBAL, thisConfig.globalAddr.varUint32(),
+                        OP_GET_GLOBAL, thisConfig.globalSize.varUint32(),
+                        OP_CALL, funcEntryReadWatchpoint.varUint32(),
+                    OP_END,
+                ];
+
+                codeRoutes.push(thisRoute);
+            }
+
+            const routerCode = [];
+
+            routerCode.push(OP_GET_GLOBAL);
+            routerCode.push(globalAreReadWatchpointsEnabled.varUint32());
+            routerCode.push(OP_IF);
+            routerCode.push(0x40);
+
+            for (let i = 0; i < wpCount; i++) {
+                const thisRoute = codeRoutes[i];
+                for (let j = 0; j < thisRoute.length; j++) {
+                    routerCode.push(thisRoute[j]);
+                }
+            }
+
+            routerCode.push(OP_END);
+            routerCode.push(OP_GET_LOCAL);
+            routerCode.push(VarUint32(0x00));
+            routerCode.push(OP_RETURN);
+            routerCode.push(OP_END);
+
+            //
+            // This function routes a memory read to the handler function for any enabled read watchpoints
+            //
+            // Arguments:
+            //  local_0 = base pointer
+            //  local_1 = load offset
+            //  local_2 = load size
+            //
+            wail.addCodeEntry(funcEntryReadWatchpointRouter, {
+                locals: [],
+                code: routerCode
             });
 
             //
@@ -430,38 +627,31 @@ const instrumentBinary = function(bufferSource) {
             //  local_0 = base pointer
             //  local_1 = load offset
             //  local_2 = load size
+            //  local_3 = wp addr
+            //  local_4 = wp size
             //
             wail.addCodeEntry(funcEntryReadWatchpoint, {
                 locals: [],
                 code: [
                     OP_BLOCK, 0x40,
-                        OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                        OP_IF, 0x40,
-                            OP_GET_GLOBAL, globalWatchFlags.varUint32(),
-                            OP_I32_CONST, VarUint32(0x02),
-                            OP_I32_AND,
-                            OP_IF, 0x40,
-                                OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                                OP_GET_GLOBAL, globalWatchSize.varUint32(),
-                                OP_I32_ADD,
-                                OP_GET_LOCAL, VarUint32(0x00),
-                                OP_GET_LOCAL, VarUint32(0x01),
-                                OP_I32_ADD,
-                                OP_I32_LT_U,
-                                OP_BR_IF, VarUint32(0x02),
-                                OP_GET_GLOBAL, globalWatchAddr.varUint32(),
-                                OP_GET_LOCAL, VarUint32(0x00),
-                                OP_GET_LOCAL, VarUint32(0x01),
-                                OP_I32_ADD,
-                                OP_GET_LOCAL, VarUint32(0x02),
-                                OP_I32_ADD,
-                                OP_I32_GT_U,
-                                OP_BR_IF, VarUint32(0x02),
-                                OP_CALL, importReadWatchFunc.varUint32(),
-                            OP_END,
-                        OP_END,
+                        OP_GET_LOCAL, VarUint32(0x03),
+                        OP_GET_LOCAL, VarUint32(0x04),
+                        OP_I32_ADD,
+                        OP_GET_LOCAL, VarUint32(0x00),
+                        OP_GET_LOCAL, VarUint32(0x01),
+                        OP_I32_ADD,
+                        OP_I32_LT_U,
+                        OP_BR_IF, VarUint32(0x00),
+                        OP_GET_LOCAL, VarUint32(0x03),
+                        OP_GET_LOCAL, VarUint32(0x00),
+                        OP_GET_LOCAL, VarUint32(0x01),
+                        OP_I32_ADD,
+                        OP_GET_LOCAL, VarUint32(0x02),
+                        OP_I32_ADD,
+                        OP_I32_GT_U,
+                        OP_BR_IF, VarUint32(0x00),
+                        OP_CALL, importReadWatchFunc.varUint32(),
                     OP_END,
-                    OP_GET_LOCAL, VarUint32(0x00),
                     OP_RETURN,
                     OP_END,
                 ]
@@ -566,7 +756,9 @@ const instrumentBinary = function(bufferSource) {
             const pushOffsetImmediate = VarUint32(offset);
 
             const callOpcode = [ OP_CALL ];
-            const callDest = funcEntryReadWatchpoint.varUint32();
+            const callDest = funcEntryReadWatchpointRouter.varUint32();
+
+            const opEndInstr = [ OP_END ];
 
             reader.copyBuffer(pushSizeOpcode);
             reader.copyBuffer(pushSizeImmediate);
@@ -584,13 +776,13 @@ const instrumentBinary = function(bufferSource) {
         // a "watchpoint" address. The actual "watchpoint" function will not be called
         // unless the flag is nonzero. This is just a quick, preliminary check to help ensure
         // that the least extra instructions possible are executed when watchpoints are disabled.
-        // The real watchpoint logic exists in the CODE entry for funcEntryWriteWatchpoint above.
+        // The real watchpoint logic exists in the CODE entry for funcEntryWriteWatchpointRouter above.
         //
         // Injected instructions:
         //
-        // get_global <globalWatchFlags>
+        // get_global <globalAreWriteWatchpointsEnabled>
         // if
-        //     call <funcEntryWriteWatchpoint>
+        //     call <funcEntryWriteWatchpointRouter>
         // end 
         //
         const writeWatchpointInstrCallback = function(instrBytes) {
@@ -599,12 +791,12 @@ const instrumentBinary = function(bufferSource) {
             // As mentioned above, we avoid using the spread operator here solely
             // for performance reasons
             const getGlobalOpcode = [ OP_GET_GLOBAL ];
-            const getGlobalImmediate = globalWatchFlags.varUint32();
+            const getGlobalImmediate = globalAreWriteWatchpointsEnabled.varUint32();
 
             const ifOpcode = [ OP_IF, 0x40 ];
 
             const callOpcode = [ OP_CALL ];
-            const callDest = funcEntryWriteWatchpoint.varUint32();
+            const callDest = funcEntryWriteWatchpointRouter.varUint32();
 
             const endOpcode = [ OP_END ];
 
@@ -791,16 +983,20 @@ const instrumentBinary = function(bufferSource) {
     const symObj = {};
 
     if (instrumentLevel) {
-        const configWpIndex = wail.getFunctionIndex(funcEntryConfigureWatchpoint);
-        symObj[configWpIndex.i32()] = "_wp_config";
+        for (let i = 0; i < wpCount; i++) {
+            const thisFunc = wpConfigs[i].funcEntry;
+
+            const configWpIndex = wail.getFunctionIndex(thisFunc);
+            symObj[configWpIndex.i32()] = "_wp_config" + i;
+        }
 
         if (instrumentLevel & ENABLE_WP_READ) {
-            const readWpIndex =  wail.getFunctionIndex(funcEntryReadWatchpoint);
+            const readWpIndex =  wail.getFunctionIndex(funcEntryReadWatchpointRouter);
             symObj[readWpIndex.i32()] = "_wp_read";
         }
 
         if (instrumentLevel & ENABLE_WP_WRITE) {
-            const writeWpIndex = wail.getFunctionIndex(funcEntryWriteWatchpoint);
+            const writeWpIndex = wail.getFunctionIndex(funcEntryWriteWatchpointRouter);
             symObj[writeWpIndex.i32()] = "_wp_write";
         }
     }
@@ -966,9 +1162,15 @@ const webAssemblyInstantiateHook = function(inObject, importObject = {}) {
 
             const cetusIdentifier = cetusInstances.reserveIdentifier();
 
+            const watchpointExports = [];
+
+            for (let i = 0; i < cetusOptions.wpCount; i++) {
+                watchpointExports.push(instance.exports["configWatch" + i]);
+            }
+
             cetusInstances.newInstance(cetusIdentifier, {
                 memory: memoryInstance,
-                watchpointExports: [instance.exports.addWatch],
+                watchpointExports: watchpointExports,
                 buffer: instrumentedBuffer,
                 symbols: instrumentedSymbols
             });
@@ -1041,9 +1243,15 @@ const webAssemblyInstanceProxy = new Proxy(WebAssembly.Instance, {
 
         const cetusIdentifier = cetusInstances.reserveIdentifier();
 
+        const watchpointExports = [];
+
+        for (let i = 0; i < cetusOptions.wpCount; i++) {
+            watchpointExports.push(result.exports["configWatch" + i]);
+        }
+
         cetusInstances.newInstance(cetusIdentifier, {
             memory: memoryInstance,
-            watchpointExports: [result.exports.addWatch],
+            watchpointExports: watchpointExports,
             buffer: instrumentResults.instrumentedBuffer,
             symbols: instrumentResults.instrumentedSymbols
         });
@@ -1115,11 +1323,15 @@ const webAssemblyInstantiateStreamingHook = function(sourceObj, importObject = {
                     colorError("WebAssembly.instantiateStreaming() failed to retrieve a WebAssembly.Memory object");
                 }
 
-                const cetusIdentifier = cetusInstances.reserveIdentifier();
+                const watchpointExports = [];
+
+                for (let i = 0; i < cetusOptions.wpCount; i++) {
+                    watchpointExports.push(instanceObject.instance.exports["configWatch" + i]);
+                }
 
                 cetusInstances.newInstance(cetusIdentifier, {
                     memory: memoryInstance,
-                    watchpointExports: [instanceObject.instance.exports.addWatch],
+                    watchpointExports: watchpointExports,
                     buffer: instrumentedBuffer,
                     symbols: instrumentedSymbols
                 });
