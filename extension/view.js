@@ -715,6 +715,7 @@ const updateStringSearchResults = function(resultCount, resultObject) {
 		}
 
 		row = tbody.insertRow();
+        row.setAttribute("name", "strResultRow");
 
 		cell = row.insertCell();
 		cell.innerText = toHex(address);
