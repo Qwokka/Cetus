@@ -602,7 +602,7 @@ class Cetus {
         let ascii =  this.asciiStrings(minLength);
         let unicode = this.unicodeStrings(minLength);
 
-        return ascii.concat(unicode);
+        return Object.assign(ascii.results, unicode.results);
     }
 
     asciiStrings(minLength = 4) {
