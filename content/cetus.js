@@ -521,7 +521,7 @@ class Cetus {
             return;
         }
 
-        this.speedhack.multiplier = multiplier;
+        cetusInstances.speedhack.multiplier = multiplier;
     }
 
     _resolveFunctions() {
@@ -771,7 +771,6 @@ class Cetus {
     }
 }
 
-// TODO Move speedhack stuff
 class SpeedHack {
     constructor(multiplier) {
         this.multiplier = multiplier;

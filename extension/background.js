@@ -449,7 +449,7 @@ class BackgroundExtension {
             this.popupRestore();
         }
         else {
-            this.sendPopupMessage(instanceId, "reset", {});
+            this.sendPopupMessage(targetInstance, "reset", {});
 
             this.instanceId = null;
         }
