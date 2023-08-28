@@ -822,7 +822,7 @@ const speedHackPerformanceNow = function() {
     const real = sh.oldPn.call(performance);
     const elapsed = (real - sh.lastPn) * sh.multiplier;
 
-    const result = Math.floor(sh.lastPn + sh.cumulativePn + elapsed);
+    const result = Math.floor(sh.startPn + sh.cumulativePn + elapsed);
 
     sh.cumulativePn += elapsed;
     sh.lastPn = real;
