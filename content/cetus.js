@@ -795,6 +795,10 @@ class SpeedHack {
 
         this.startDn = this.oldDn.call(Date);
         this.startPn = this.oldPn.call(performance);
+        this.lastDn = this.startDn;
+        this.lastPn = this.startPn;
+        this.cumulativeDn = 0;
+        this.cumulativePn = 0;
     }
 }
 
@@ -802,18 +806,28 @@ const speedHackDateNow = function() {
     const sh = cetusInstances.speedhack;
 
     const real = sh.oldDn.call(Date);
-    const elapsed = (real - sh.startDn) * sh.multiplier;
+    const elapsed = (real - sh.lastDn) * sh.multiplier;
 
-    return Math.floor(sh.startDn + elapsed);
+    const result = Math.floor(sh.startDn + sh.cumulativeDn + elapsed);
+
+    sh.cumulativeDn += elapsed;
+    sh.lastDn = real;
+
+    return result
 };
 
 const speedHackPerformanceNow = function() {
     const sh = cetusInstances.speedhack;
 
     const real = sh.oldPn.call(performance);
-    const elapsed = (real - sh.startPn) * sh.multiplier;
+    const elapsed = (real - sh.lastPn) * sh.multiplier;
 
-    return sh.startPn + elapsed;
+    const result = Math.floor(sh.lastPn + sh.cumulativePn + elapsed);
+
+    sh.cumulativePn += elapsed;
+    sh.lastPn = real;
+
+    return result
 };
 
 // TODO Change the look of this
