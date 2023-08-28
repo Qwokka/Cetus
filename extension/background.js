@@ -134,6 +134,9 @@ class ExtensionInstance {
         };
 
         try {
+            // Select the current tab, otherwise the content message will not be received until
+            // the tab is manually selected
+            chrome.tabs.update(this.contentTab.id, {selected: true});
             chrome.tabs.sendMessage(this.contentTab.id, msg);
         }
         catch (e) {
