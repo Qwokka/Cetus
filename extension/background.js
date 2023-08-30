@@ -318,6 +318,10 @@ class WindowInstance {
     _popupConnect() {
         const targetWindow = this;
 
+        const popupDisconnectListener = function() {
+            targetWindow._popupChannel = null;
+        }
+
         // This listener receives messages sent from the popup or devtools UI
         const popupMessageListener = function(msg, msgSource) {
             const msgType = msg.type;
@@ -527,6 +531,7 @@ class WindowInstance {
                 targetWindow._popupChannel = channel;
 
                 targetWindow._popupChannel.onMessage.addListener(popupMessageListener);
+                targetWindow._popupChannel.onDisconnect.addListener(popupDisconnectListener);
             });
         }
         else {

@@ -20,14 +20,16 @@ class PopupExtension {
     constructor() {
         if (typeof chrome.extension.connect !== "undefined") {
             this._bgChannel = chrome.extension.connect({ name: "Cetus Background Page"});
+
+            this._bgChannel.onMessage.addListener(bgMessageListener);
+            this.sendBGMessage("popupConnected");
         }
         else {
             this._bgChannel = browser.runtime.connect({ name: "Cetus Background Page"});
+
+            this._bgChannel.onMessage.addListener(bgMessageListener);
+            this.sendBGMessage("popupConnected");
         }
-
-        this._bgChannel.onMessage.addListener(bgMessageListener);
-
-        this.sendBGMessage("popupConnected");
 
         this._patches = [];
         this._loadPatchesFromStorage();
