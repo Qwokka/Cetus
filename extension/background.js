@@ -221,7 +221,7 @@ class WASMInstance {
         }
 
         // If this bookmark is not already in our watchpoint list,
-        // add it. If necessary, remove the oldest watchpoint
+        // add it
         if (matchIndex === null) {
             let freeIndex = null;
             for (let i = 0; i < MAX_WATCHPOINTS; i++) {
