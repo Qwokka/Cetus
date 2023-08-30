@@ -16,12 +16,13 @@ limitations under the License.
 
 const MAX_WATCHPOINTS = 10;
 
-class ExtensionInstance {
-    constructor(instanceId, url) {
+class WASMInstance {
+    constructor(instanceId, url, parentWindow) {
         // The saved instance ID should only be used for actions triggered from the UI. Under other circumstances, it's possible
         // for the saved instance ID is in the middle of an action.
         this.instanceId = instanceId;
         this.url = url;
+        this.parentWindow = parentWindow;
 
         this.contentTab = null;
 
@@ -134,9 +135,6 @@ class ExtensionInstance {
         };
 
         try {
-            // Select the current tab, otherwise the content message will not be received until
-            // the tab is manually selected
-            chrome.tabs.update(this.contentTab.id, {selected: true});
             chrome.tabs.sendMessage(this.contentTab.id, msg);
         }
         catch (e) {
@@ -171,7 +169,7 @@ class ExtensionInstance {
             bookmarks: this.instanceData.bookmarks,
         };
 
-        bgExtension.sendPopupMessage(this.instanceId, "updateBookmarks", msgBody);
+        this.parentWindow.sendPopupMessage(this.instanceId, "updateBookmarks", msgBody);
     }
 
     updateMemView() {
@@ -301,7 +299,7 @@ class ExtensionInstance {
     }
 }
 
-class BackgroundExtension {
+class WindowInstance {
     constructor() {
         this.instances = [];
         this.instanceId = null;
@@ -318,23 +316,232 @@ class BackgroundExtension {
     }
 
     _popupConnect() {
+        const targetWindow = this;
+
+        // This listener receives messages sent from the popup or devtools UI
+        const popupMessageListener = function(msg, msgSource) {
+            const msgType = msg.type;
+            const msgBody = msg.body;
+
+            if (typeof msgType !== "string") {
+                return true;
+            }
+
+            const currentInstance = targetWindow.currentInstance();
+
+            switch (msgType) {
+                case "popupConnected":
+                    targetWindow.popupRestore();
+
+                    break;
+                case "search":
+                    const forwardMsg = {};
+
+                    const searchValue = msgBody.param;
+                    const searchMemType = msgBody.memType;
+                    const searchMemAlign = msgBody.memAlign;
+                    const searchComp = msgBody.compare;
+                    const searchLower = msgBody.lower;
+                    const searchUpper = msgBody.upper;
+
+                    currentInstance.instanceData.searchForm.inProgress = true;
+
+                    currentInstance.instanceData.searchForm.value = searchValue;
+                    currentInstance.instanceData.searchForm.valueType = searchMemType;
+                    currentInstance.instanceData.searchForm.memAlign = searchMemAlign;
+                    currentInstance.instanceData.searchForm.comparison = searchComp;
+                    currentInstance.instanceData.searchForm.rangeLower = searchLower;
+                    currentInstance.instanceData.searchForm.rangeUpper = searchUpper;
+
+                    forwardMsg.param = searchValue;
+                    forwardMsg.memType = searchMemType;
+                    forwardMsg.memAlign = searchMemAlign;
+                    forwardMsg.compare = searchComp;
+                    forwardMsg.lower = searchLower;
+                    forwardMsg.upper = searchUpper;
+
+                    currentInstance.sendContentMessage("search", forwardMsg);
+
+                    targetWindow.pendingSearch = true;
+                    
+                    break;
+                case "restartSearch":
+                    currentInstance.instanceData.searchForm.inProgress = false;
+
+                    currentInstance.instanceData.searchForm.results.count = 0;
+                    currentInstance.instanceData.searchForm.results.object = {};
+
+                    currentInstance.sendContentMessage("restartSearch");
+
+                    break;
+                case "addBookmark":
+                    const bookmarkMemAddr = msgBody.memAddr;
+                    const bookmarkMemType = msgBody.memType;
+
+                    targetWindow.currentInstance().addBookmark(bookmarkMemAddr, bookmarkMemType);
+
+                    break;
+                case "removeBookmark":
+                    const removeMemAddr = msgBody.memAddr;
+
+                    if (bigintIsNaN(removeMemAddr)) {
+                        return true;
+                    }
+
+                    targetWindow.currentInstance().removeBookmark(removeMemAddr);
+
+                    break;
+                case "modifyMemory":
+                    const modifyMemAddr = msgBody.memAddr;
+                    const modifyMemValue = msgBody.memValue;
+                    const modifyMemType = msgBody.memType;
+
+                    const modifyMemIndex = realAddressToIndex(modifyMemAddr, modifyMemType);
+
+                    const newMsgBody = {
+                        memAddr: modifyMemAddr,
+                        memValue: modifyMemValue,
+                        memType: modifyMemType
+                    };
+
+                    currentInstance.sendContentMessage("modifyMemory", newMsgBody);
+
+                    const bookmark = targetWindow.currentInstance().instanceData.bookmarks[modifyMemAddr];
+
+                    if (typeof bookmark !== "object") {
+                        return true;
+                    }
+
+                    bookmark.value = modifyMemValue;
+
+                    targetWindow.currentInstance().instanceData.bookmarks[modifyMemAddr] = bookmark;
+
+                    const bookmarkFlags = bookmark.flags;
+
+                    // If we're updating the value of a bookmark, we also want to update
+                    // its associated watchpoint to the same value
+                    if (bookmarkFlags) {
+                        targetWindow.currentInstance().updateWatchpoint(modifyMemAddr, modifyMemValue, 0);
+                    }
+
+                    break;
+                case "updateWatchpoint":
+                    const watchMemAddr = msgBody.memAddr;
+                    const watchMemValue = msgBody.memValue;
+
+                    const flags = msgBody.flags;
+
+                    targetWindow.currentInstance().updateWatchpoint(watchMemAddr, watchMemValue, flags);
+
+                    break;
+                case "stringSearch":
+                    const strType = msgBody.strType;
+                    const strLower = msgBody.lower;
+                    const strUpper = msgBody.upper;
+                    const strMin = msgBody.minLength;
+
+                    currentInstance.sendContentMessage("stringSearch", {
+                        strType: strType,
+                        lower: strLower,
+                        upper: strUpper,
+                        minLength: strMin,
+                    });
+
+                    targetWindow.currentInstance().instanceData.stringForm.strType = strType;
+                    targetWindow.currentInstance().instanceData.stringForm.strMinLen = strMin;
+
+                    targetWindow.pendingStringSearch = true;
+
+                    break;
+                case "queryFunction":
+                    const funcIndex = msgBody.index;
+                    const lineNum = msgBody.lineNum;
+
+                    if (typeof funcIndex !== "string" || bigintIsNaN(funcIndex) || funcIndex === "") {
+                        return true;
+                    }
+
+                    targetWindow.pendingFunctionIndex = funcIndex;
+
+                    if (typeof lineNum === "number") {
+                        currentInstance.sendContentMessage("queryFunction", {
+                            index: funcIndex,
+                            lineNum: lineNum
+                        });
+                    }
+                    else {
+                        currentInstance.sendContentMessage("queryFunction", {
+                            index: funcIndex
+                        });
+                    }
+                    break;
+                case "shToggle":
+                    const shNewEnabled = !targetWindow.currentInstance().instanceData.speedhack.enabled;
+
+                    targetWindow.currentInstance().instanceData.speedhack.enabled = shNewEnabled;
+
+                    if (shNewEnabled) {
+                        const shMultiplier = msgBody.multiplier;
+
+                        targetWindow.currentInstance().instanceData.speedhack.multiplier = shMultiplier;
+
+                        currentInstance.sendContentMessage("shEnable", {
+                            multiplier: shMultiplier
+                        });
+                    }
+                    else {
+                        // We "disable" the speedhack by setting its multiplier to 1x
+                        // Otherwise we would potentially travel "back in time"
+                        currentInstance.sendContentMessage("shEnable", {
+                            multiplier: 1
+                        });
+                    }
+
+                    break;
+                case "memToggle":
+                    targetWindow.currentInstance().instanceData.memoryViewer.enabled = msgBody.enabled;
+                    targetWindow.currentInstance().instanceData.memoryViewer.startAddress = msgBody.startAddress;
+
+                    break;
+                case "instanceChange":
+                    const newInstance = msgBody.id;
+
+                    if (targetWindow.getInstance(newInstance) === null) {
+                        return true;
+                    }
+
+                    targetWindow.instanceId = newInstance;
+                    targetWindow.popupRestore();
+                    break;
+            }
+
+            return true;
+        };
+
         if (typeof chrome.extension.onConnect !== "undefined") {
             chrome.extension.onConnect.addListener(function(channel) {
-                bgExtension._popupChannel = channel;
+                if (targetWindow._popupChannel !== null) {
+                    return;
+                }
 
-                bgExtension._popupChannel.onMessage.addListener(popupMessageListener);
+                targetWindow._popupChannel = channel;
+
+                targetWindow._popupChannel.onMessage.addListener(popupMessageListener);
             });
         }
         else {
             browser.runtime.onConnect.addListener(function(channel) {
-                bgExtension._popupChannel = channel;
+                if (targetWindow._popupChannel !== null) {
+                    return;
+                }
 
-                bgExtension._popupChannel.onMessage.addListener(popupMessageListener);
-                bgExtension._popupChannel.onDisconnect.addListener(popupDisconnectListener);
+                targetWindow._popupChannel = channel;
+
+                targetWindow._popupChannel.onMessage.addListener(popupMessageListener);
+                targetWindow._popupChannel.onDisconnect.addListener(popupDisconnectListener);
             });
         }
     }
-
 
     popupRestore() {
         const currentInstance = this.currentInstance();
@@ -398,7 +605,7 @@ class BackgroundExtension {
             this.instanceId = instanceId;
         }
 
-        const newInstance = new ExtensionInstance(instanceId, pageUrl);
+        const newInstance = new WASMInstance(instanceId, pageUrl, this);
         this.instances.push(newInstance);
         return newInstance;
     }
@@ -459,203 +666,24 @@ class BackgroundExtension {
     }
 }
 
-// This listener receives messages sent from the popup or devtools UI
-const popupMessageListener = function(msg) {
-    const msgType = msg.type;
-    const msgBody = msg.body;
+class BackgroundExtension {
+    windows = {};
 
-    if (typeof msgType !== "string") {
-        return;
+    addWindow(windowId) {
+        const newWindow = new WindowInstance();
+        this.windows[windowId] = newWindow;
+
+        return newWindow;
     }
 
-    const currentInstance = bgExtension.currentInstance();
+    getWindow(windowId) {
+        if (typeof this.windows[windowId] === "object") {
+            return this.windows[windowId];
+        }
 
-    switch (msgType) {
-        case "popupConnected":
-            bgExtension.popupRestore();
-
-            break;
-        case "search":
-            const forwardMsg = {};
-
-            const searchValue = msgBody.param;
-            const searchMemType = msgBody.memType;
-            const searchMemAlign = msgBody.memAlign;
-            const searchComp = msgBody.compare;
-            const searchLower = msgBody.lower;
-            const searchUpper = msgBody.upper;
-
-            currentInstance.instanceData.searchForm.inProgress = true;
-
-            currentInstance.instanceData.searchForm.value = searchValue;
-            currentInstance.instanceData.searchForm.valueType = searchMemType;
-            currentInstance.instanceData.searchForm.memAlign = searchMemAlign;
-            currentInstance.instanceData.searchForm.comparison = searchComp;
-            currentInstance.instanceData.searchForm.rangeLower = searchLower;
-            currentInstance.instanceData.searchForm.rangeUpper = searchUpper;
-
-            forwardMsg.param = searchValue;
-            forwardMsg.memType = searchMemType;
-            forwardMsg.memAlign = searchMemAlign;
-            forwardMsg.compare = searchComp;
-            forwardMsg.lower = searchLower;
-            forwardMsg.upper = searchUpper;
-
-            currentInstance.sendContentMessage("search", forwardMsg);
-
-            bgExtension.pendingSearch = true;
-            
-            break;
-        case "restartSearch":
-            currentInstance.instanceData.searchForm.inProgress = false;
-
-            currentInstance.instanceData.searchForm.results.count = 0;
-            currentInstance.instanceData.searchForm.results.object = {};
-
-            currentInstance.sendContentMessage("restartSearch");
-
-            break;
-        case "addBookmark":
-            const bookmarkMemAddr = msgBody.memAddr;
-            const bookmarkMemType = msgBody.memType;
-
-            bgExtension.currentInstance().addBookmark(bookmarkMemAddr, bookmarkMemType);
-
-            break;
-        case "removeBookmark":
-            const removeMemAddr = msgBody.memAddr;
-
-            if (bigintIsNaN(removeMemAddr)) {
-                return;
-            }
-
-            bgExtension.currentInstance().removeBookmark(removeMemAddr);
-
-            break;
-        case "modifyMemory":
-            const modifyMemAddr = msgBody.memAddr;
-            const modifyMemValue = msgBody.memValue;
-            const modifyMemType = msgBody.memType;
-
-            const modifyMemIndex = realAddressToIndex(modifyMemAddr, modifyMemType);
-
-            const newMsgBody = {
-                memAddr: modifyMemAddr,
-                memValue: modifyMemValue,
-                memType: modifyMemType
-            };
-
-            currentInstance.sendContentMessage("modifyMemory", newMsgBody);
-
-            const bookmark = bgExtension.currentInstance().instanceData.bookmarks[modifyMemAddr];
-
-            if (typeof bookmark !== "object") {
-                return;
-            }
-
-            bookmark.value = modifyMemValue;
-
-            bgExtension.currentInstance().instanceData.bookmarks[modifyMemAddr] = bookmark;
-
-            const bookmarkFlags = bookmark.flags;
-
-            // If we're updating the value of a bookmark, we also want to update
-            // its associated watchpoint to the same value
-            if (bookmarkFlags) {
-                bgExtension.currentInstance().updateWatchpoint(modifyMemAddr, modifyMemValue, 0);
-            }
-
-            break;
-        case "updateWatchpoint":
-            const watchMemAddr = msgBody.memAddr;
-            const watchMemValue = msgBody.memValue;
-
-            const flags = msgBody.flags;
-
-            bgExtension.currentInstance().updateWatchpoint(watchMemAddr, watchMemValue, flags);
-
-            break;
-        case "stringSearch":
-            const strType = msgBody.strType;
-            const strLower = msgBody.lower;
-            const strUpper = msgBody.upper;
-            const strMin = msgBody.minLength;
-
-            currentInstance.sendContentMessage("stringSearch", {
-                strType: strType,
-                lower: strLower,
-                upper: strUpper,
-                minLength: strMin,
-            });
-
-            bgExtension.currentInstance().instanceData.stringForm.strType = strType;
-            bgExtension.currentInstance().instanceData.stringForm.strMinLen = strMin;
-
-            bgExtension.pendingStringSearch = true;
-
-            break;
-        case "queryFunction":
-            const funcIndex = msgBody.index;
-            const lineNum = msgBody.lineNum;
-
-            if (typeof funcIndex !== "string" || bigintIsNaN(funcIndex) || funcIndex === "") {
-                return;
-            }
-
-            bgExtension.pendingFunctionIndex = funcIndex;
-
-            if (typeof lineNum === "number") {
-                currentInstance.sendContentMessage("queryFunction", {
-                    index: funcIndex,
-                    lineNum: lineNum
-                });
-            }
-            else {
-                currentInstance.sendContentMessage("queryFunction", {
-                    index: funcIndex
-                });
-            }
-            break;
-        case "shToggle":
-            const shNewEnabled = !bgExtension.currentInstance().instanceData.speedhack.enabled;
-
-            bgExtension.currentInstance().instanceData.speedhack.enabled = shNewEnabled;
-
-            if (shNewEnabled) {
-                const shMultiplier = msgBody.multiplier;
-
-                bgExtension.currentInstance().instanceData.speedhack.multiplier = shMultiplier;
-
-                currentInstance.sendContentMessage("shEnable", {
-                    multiplier: shMultiplier
-                });
-            }
-            else {
-                // We "disable" the speedhack by setting its multiplier to 1x
-                // Otherwise we would potentially travel "back in time"
-                currentInstance.sendContentMessage("shEnable", {
-                    multiplier: 1
-                });
-            }
-
-            break;
-        case "memToggle":
-            bgExtension.currentInstance().instanceData.memoryViewer.enabled = msgBody.enabled;
-            bgExtension.currentInstance().instanceData.memoryViewer.startAddress = msgBody.startAddress;
-
-            break;
-        case "instanceChange":
-            const newInstance = msgBody.id;
-
-            if (bgExtension.getInstance(newInstance) === null) {
-                return;
-            }
-
-            bgExtension.instanceId = newInstance;
-            bgExtension.popupRestore();
-            break;
+        return null;
     }
-};
+}
 
 bgExtension = new BackgroundExtension();
 
@@ -667,19 +695,27 @@ chrome.runtime.onMessage.addListener(function(msgRaw, msgSender) {
     const msgType = msg.type;
     const msgBody = msg.body;
 
-    const msgSource = msgSender.documentId + ":" + msg.id;
+    const msgSrcWindow = msgSender.documentId;
+    const msgSrcInstance = msgSrcWindow + ":" + msg.id;
 
     if (typeof msgType !== "string") {
         return true;
     }
 
-    let targetInstance;
+    let targetWindow = null;
+    let targetInstance = null;
 
     if (msgType !== "init") {
-        targetInstance = bgExtension.getInstance(msgSource);
+        targetWindow = bgExtension.getWindow(msgSrcWindow);
+
+        if (targetWindow === null) {
+            return true;
+        }
+
+        targetInstance = targetWindow.getInstance(msgSrcInstance);
 
         if (targetInstance === null) {
-            return;
+            return true;
         }
     }
 
@@ -689,20 +725,24 @@ chrome.runtime.onMessage.addListener(function(msgRaw, msgSender) {
             const symbols = msgBody.symbols;
 
             if (typeof pageUrl !== "string") {
-                return;
+                return true;
             }
 
             if (typeof symbols !== "object") {
-                return;
+                return true;
             }
 
-            const newInstance = bgExtension.addInstance(msgSource, pageUrl);
+            if (targetWindow === null) {
+                targetWindow = bgExtension.addWindow(msgSrcWindow);
+            }
+
+            const newInstance = targetWindow.addInstance(msgSrcInstance, pageUrl);
 
             newInstance.instanceData.initialized = true;
             newInstance.instanceData.url = pageUrl;
             newInstance.instanceData.symbols = symbols;
 
-            bgExtension.sendPopupMessage(msgSource, "init", {
+            targetWindow.sendPopupMessage(msgSrcInstance, "init", {
                 url: pageUrl,
                 symbols: symbols,
             });
@@ -715,7 +755,7 @@ chrome.runtime.onMessage.addListener(function(msgRaw, msgSender) {
             targetInstance.instanceData.memoryViewer.memData = bytesValue;
 
             if (targetInstance.instanceId == this.instanceId) {
-                bgExtension.updateMemView();
+                targetWindow.updateMemView();
             }
 
             break;
@@ -728,20 +768,20 @@ chrome.runtime.onMessage.addListener(function(msgRaw, msgSender) {
                 typeof value !== "number" ||
                 !isValidMemType(memType)) {
                 console.warn("Got bad queryMemoryResult: address " + address + " value " + value);
-                return;
+                return true;
             }
 
-            if (typeof bgExtension.currentInstance().instanceData.bookmarks[address] !== "object") {
-                return;
+            if (typeof targetWindow.currentInstance().instanceData.bookmarks[address] !== "object") {
+                return true;
             }
 
-            bgExtension.currentInstance().instanceData.bookmarks[address].value = value;
-            bgExtension.currentInstance().updateBookmarks();
+            targetWindow.currentInstance().instanceData.bookmarks[address].value = value;
+            targetWindow.currentInstance().updateBookmarks();
 
             break;
         case "searchResult":
-            if (!bgExtension.pendingSearch) {
-                return;
+            if (!targetWindow.pendingSearch) {
+                return true;
             }
 
             const resultCount = msgBody.count;
@@ -751,13 +791,13 @@ chrome.runtime.onMessage.addListener(function(msgRaw, msgSender) {
             if (typeof resultCount !== "number" ||
                 typeof resultObject !== "object" ||
                 !isValidMemType(resultMemType)) {
-                return;
+                return true;
             }
 
             // All keys in resultObject should be numeric. If not, toss the whole thing
             for (let entry in resultObject) {
                 if (bigintIsNaN(entry)) {
-                    return;
+                    return true;
                 }
             }
 
@@ -766,9 +806,9 @@ chrome.runtime.onMessage.addListener(function(msgRaw, msgSender) {
 
             targetInstance.instanceData.searchForm.valueType = resultMemType;
 
-            bgExtension.passthruPopupMessage(msg);
+            targetWindow.passthruPopupMessage(msg);
 
-            bgExtension.pendingSearch = false;
+            targetWindow.pendingSearch = false;
 
             break;
         case "addBookmark":
@@ -776,42 +816,42 @@ chrome.runtime.onMessage.addListener(function(msgRaw, msgSender) {
             const bookmarkMemType = msgBody.memType;
 
             if (typeof bookmarkAddress !== "number" || !isValidMemType(bookmarkMemType)) {
-                return;
+                return true;
             }
 
-            bgExtension.currentInstance().addBookmark(bookmarkAddress, bookmarkMemType);
+            targetWindow.currentInstance().addBookmark(bookmarkAddress, bookmarkMemType);
 
             break;
         case "stringSearchResult":
-            if (!bgExtension.pendingStringSearch) {
-                return;
+            if (!targetWindow.pendingStringSearch) {
+                return true;
             }
 
             const count = msgBody.count;
             const resultObj = msgBody.results;
 
             if (typeof count !== "number" || typeof resultObj !== "object") {
-                return;
+                return true;
             }
 
             // All keys in resultObject should be numeric. If not, toss the whole thing
             for (let entry in resultObj) {
                 if (bigintIsNaN(entry)) {
-                    return;
+                    return true;
                 }
             }
 
             targetInstance.instanceData.stringForm.results.count = count;
             targetInstance.instanceData.stringForm.results.object = resultObj;
 
-            bgExtension.passthruPopupMessage(msg);
+            targetWindow.passthruPopupMessage(msg);
 
-            bgExtension.pendingStringSearch = false;
+            targetWindow.pendingStringSearch = false;
 
             break;
         case "queryFunctionResult":
             if (typeof msgBody.bytes !== "object") {
-                return;
+                return true;
             }
 
             const funcIndex = msgBody.funcIndex;
@@ -821,25 +861,25 @@ chrome.runtime.onMessage.addListener(function(msgRaw, msgSender) {
             //  2. This result corresponds to the function we queried
             //
             // If either of these are not true, drop the message
-            if (funcIndex !== bgExtension.pendingFunctionIndex) {
-                return;
+            if (funcIndex !== targetWindow.pendingFunctionIndex) {
+                return true;
             }
 
-            bgExtension.pendingFunctionIndex = null;
+            targetWindow.pendingFunctionIndex = null;
 
             const funcArray = Object.values(msgBody.bytes);
             const funcBytes = new Uint8Array(funcArray);
             const lineNum = msgBody.lineNum;
 
             if (typeof lineNum === "number") {
-                bgExtension.sendPopupMessage(msgSource, "queryFunctionResult", {
+                targetWindow.sendPopupMessage(msgSrcInstance, "queryFunctionResult", {
                     funcIndex: funcIndex,
                     bytes: funcBytes,
                     lineNum: lineNum
                 });
             }
             else {
-                bgExtension.sendPopupMessage(msgSource, "queryFunctionResult", {
+                targetWindow.sendPopupMessage(msgSrcInstance, "queryFunctionResult", {
                     funcIndex: funcIndex,
                     bytes: funcBytes
                 });
@@ -851,12 +891,12 @@ chrome.runtime.onMessage.addListener(function(msgRaw, msgSender) {
 
             // We should not receive a watchPointHit message if we have no
             // bookmarks
-            if (Object.keys(bgExtension.currentInstance().instanceData.bookmarks).length == 0) {
-                return;
+            if (Object.keys(targetWindow.currentInstance().instanceData.bookmarks).length == 0) {
+                return true;
             }
 
             if (!(stackTrace instanceof Array)) {
-                return;
+                return true;
             }
 
             const savedTrace = [];
@@ -870,7 +910,7 @@ chrome.runtime.onMessage.addListener(function(msgRaw, msgSender) {
                 let lineNumber = thisFrame.lineNumber;
 
                 if (typeof fileName !== "string") {
-                    return;
+                    return true;
                 }
 
                 // Stacktrace.js does not return a line number on FireFox
@@ -878,7 +918,7 @@ chrome.runtime.onMessage.addListener(function(msgRaw, msgSender) {
                     const index = fileName.lastIndexOf(":");
 
                     if (index === -1 || index >= fileName.length - 1) {
-                        return;
+                        return true;
                     }
 
                     lineNumber = fileName.substring(index + 1);
@@ -893,17 +933,17 @@ chrome.runtime.onMessage.addListener(function(msgRaw, msgSender) {
                 savedTrace.push(savedFrame);
             }
 
-            bgExtension.getInstance(msgSource).addStackTrace(savedTrace);
+            targetWindow.getInstance(msgSrcInstance).addStackTrace(savedTrace);
 
-            bgExtension.sendPopupMessage(msgSource, "watchPointHit", {
+            targetWindow.sendPopupMessage(msgSrcInstance, "watchPointHit", {
                 stackTrace: savedTrace
             });
 
             break;
         case "instanceQuit":
-            bgExtension.removeInstance(targetInstance);
+            targetWindow.removeInstance(targetInstance);
 
-            bgExtension.sendPopupMessage(msgSource, "instanceQuit");
+            targetWindow.sendPopupMessage(msgSrcInstance, "instanceQuit");
 
             break;
     }
@@ -912,32 +952,42 @@ chrome.runtime.onMessage.addListener(function(msgRaw, msgSender) {
 });
 
 setInterval(function() {
-    const currentInstance = bgExtension.currentInstance();
+    let allWindows = bgExtension.windows;
 
-    if (currentInstance === null) {
-        return;
-    }
+    for (let key in allWindows) {
+        const thisWindow = allWindows[key];
+        const currentInstance = thisWindow.currentInstance();
 
-    for (const address of Object.keys(currentInstance.instanceData.bookmarks)) {
-        const memType = currentInstance.instanceData.bookmarks[address].memType;
+        if (currentInstance === null) {
+            return;
+        }
 
-        currentInstance.sendContentMessage("queryMemory", {
-            address: parseInt(address),
-            memType: memType,
-        });
+        for (const address of Object.keys(currentInstance.instanceData.bookmarks)) {
+            const memType = currentInstance.instanceData.bookmarks[address].memType;
+
+            currentInstance.sendContentMessage("queryMemory", {
+                address: parseInt(address),
+                memType: memType,
+            });
+        }
     }
 }, 1000);
 
 setInterval(function() {
-    const currentInstance = bgExtension.currentInstance();
+    let allWindows = bgExtension.windows;
 
-    if (currentInstance === null) {
-        return;
+    for (let key in allWindows) {
+        const thisWindow = allWindows[key];
+        const currentInstance = thisWindow.currentInstance();
+
+        if (currentInstance === null) {
+            return;
+        }
+
+        if (currentInstance.instanceData.memoryViewer.enabled) {
+            sendContentMessage("queryMemoryBytes", {
+                address: thisWindow.instanceData.memoryViewer.startAddress,
+            });
+        }
     }
-
-	if (currentInstance.instanceData.memoryViewer.enabled) {
-		sendContentMessage("queryMemoryBytes", {
-			address: bgExtension.instanceData.memoryViewer.startAddress,
-		});
-	}
 }, 250);

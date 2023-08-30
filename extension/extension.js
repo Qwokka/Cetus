@@ -24,6 +24,7 @@ class PopupExtension {
         else {
             this._bgChannel = browser.runtime.connect({ name: "Cetus Background Page"});
         }
+
         this._bgChannel.onMessage.addListener(bgMessageListener);
 
         this.sendBGMessage("popupConnected");
@@ -357,7 +358,7 @@ const bgMessageListener = function(msgRaw) {
             const resultMemType = msgBody.memType;
 
             if (typeof resultCount !== "number" || typeof resultObject !== "object") {
-                return;
+                return true;
             }
 
             updateSearchResults(resultCount, resultObject, resultMemType);
@@ -408,7 +409,7 @@ const bgMessageListener = function(msgRaw) {
             break;
         case "queryFunctionResult":
             if (typeof msgBody.bytes !== "object") {
-                return;
+                return true;
             }
 
             const funcIndex = msgBody.funcIndex;
@@ -440,6 +441,8 @@ const bgMessageListener = function(msgRaw) {
 
             break;
     }
+
+    return true;
 };
 
 // TODO Rename this variable (Maybe "popup"?)

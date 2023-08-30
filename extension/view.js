@@ -902,10 +902,18 @@ const updateInstances = function(allInstances) {
     const instanceSelector = document.getElementById("selectInstances");
     instanceSelector.innerHTML = "";
 
-    for (let i = 0; i < allInstances.length; i++) {
-        const thisInstance = allInstances[i];
+    // Only show the instance selector if there's more than one instance to select
+    if (allInstances.length > 1) {
+        instanceSelector.style.visibility = "visible";
 
-        addNewInstanceSelector(thisInstance.url, thisInstance.id, thisInstance.selected);
+        for (let i = 0; i < allInstances.length; i++) {
+            const thisInstance = allInstances[i];
+
+            addNewInstanceSelector(thisInstance.url, thisInstance.id, thisInstance.selected);
+        }
+    }
+    else {
+        instanceSelector.style.visibility = "hidden";
     }
 }
 
