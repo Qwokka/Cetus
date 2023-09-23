@@ -865,8 +865,16 @@ window.addEventListener("cetusMsgOut", function(msgRaw) {
     if (typeof msgType !== "string") {
         return;
     }
-    
-    const cetus = cetusInstances.get(msg.id);
+
+    let cetus;
+
+    try {
+        cetus = cetusInstances.get(msg.id);
+    } catch (e) {
+        // Since extension messages are sent to all frames, there's a good chance a frame will get a message without Cetus being
+        // initialized. In this case, we just drop the message
+        return;
+    }
 
     if (typeof cetus === "undefined") {
         return;
