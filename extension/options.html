@@ -1,26 +1,34 @@
 <link rel="stylesheet" type="text/css" href="/extension/css/styles.css">
+
 <div id="sectionEnableWatch">
-<div class="modal-title">Enable Watchpoints</div>
-<select id="selectEnableWatchpoints">
-    <option value=3>All</option>
-    <option value=1>Read Only</option>
-    <option value=2>Write/Freeze Only</option>
-    <option value=0>None</option>
-</select>
+  <div class="modal-title">Enable Watchpoints</div>
+    <select id="selectEnableWatchpoints">
+      <option value=3>All</option>
+      <option value=1>Read Only</option>
+      <option value=2>Write/Freeze Only</option>
+      <option value=0>None</option>
+    </select>
+  </div>
+</div>
+
 <div id="sectionLogLevel">
-<div class="modal-title">Log Level</div>
-<select id="selectLogLevel">
-    <option value=0>None</option>
-    <option value=1>Debug</option>
-    <option value=2>Trace</option>
-</select>
+  <div class="modal-title">Log Level</div>
+    <select id="selectLogLevel">
+      <option value=0>None</option>
+      <option value=1>Debug</option>
+      <option value=2>Trace</option>
+    </select>
+  </div>
 </div>
+
 <div id="sectionWPCount">
-<div class="modal-title">Max Watchpoints</div>
-<input type="range" id="rangeWPCount" min="1" max="9" value="5"><output id="outputWPCount">3</div>
-</div>
+  <div class="modal-title">Max Watchpoints</div>
+    <input type="range" id="rangeWPCount" min="1" max="9" value="5"><output id="outputWPCount">3</div>
+  </div>
 <div>
-<button class="input button" id="buttonSaveOptions">Save</button>
+
+<div id="sectionSave">
+  <button class="input button" id="buttonSaveOptions">Save</button>
 </div>
 <script src="/shared/contentutils.js"></script>
 <script src="/extension/optionspage.js"></script>
