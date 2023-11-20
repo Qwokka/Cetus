@@ -698,27 +698,26 @@ const instrumentBinary = function(bufferSource) {
                 case OP_SIMD:
                     arg = instrBytes[1];
                     switch(arg) {
-                        case SIMD_V128_LOAD8_LANE:
                         case SIMD_V128_LOAD8_SPLAT:
                             pushSizeImmediate = VarUint32(1);
                             break;
-                        case SIMD_V128_LOAD16_LANE:
                         case SIMD_V128_LOAD16_SPLAT:
                             pushSizeImmediate = VarUint32(2);
-                        case SIMD_V128_LOAD32_LANE:
-                        case SIMD_V128_LOAD32_SPLAT:
+                            break;
                         case SIMD_V128_LOAD32_ZERO:
+                        case SIMD_V128_LOAD32_SPLAT:
                             pushSizeImmediate = VarUint32(4);
+                            break;
                         case SIMD_V128_LOAD8X8_S:
                         case SIMD_V128_LOAD8X8_U:
                         case SIMD_V128_LOAD16X4_S:
                         case SIMD_V128_LOAD16X4_U:
                         case SIMD_V128_LOAD32X2_S:
                         case SIMD_V128_LOAD32X2_U:
-                        case SIMD_V128_LOAD64_LANE:
                         case SIMD_V128_LOAD64_SPLAT:
                         case SIMD_V128_LOAD64_ZERO:
                             pushSizeImmediate = VarUint32(8);
+                            break;
                         case SIMD_V128_LOAD:
                             pushSizeImmediate = VarUint32(16);
                             break;
@@ -756,9 +755,8 @@ const instrumentBinary = function(bufferSource) {
             const pushOffsetImmediate = VarUint32(offset);
 
             const callOpcode = [ OP_CALL ];
-            const callDest = funcEntryReadWatchpointRouter.varUint32();
 
-            const opEndInstr = [ OP_END ];
+            const callDest = funcEntryReadWatchpointRouter.varUint32();
 
             reader.copyBuffer(pushSizeOpcode);
             reader.copyBuffer(pushSizeImmediate);
@@ -832,10 +830,11 @@ const instrumentBinary = function(bufferSource) {
                 case SIMD_V128_LOAD64_SPLAT:
                 case SIMD_V128_LOAD32_ZERO:
                 case SIMD_V128_LOAD64_ZERO:
-                case SIMD_V128_LOAD8_LANE:
-                case SIMD_V128_LOAD16_LANE:
-                case SIMD_V128_LOAD32_LANE:
-                case SIMD_V128_LOAD64_LANE:
+                // FIXME Handle these instructions
+                //case SIMD_V128_LOAD8_LANE:
+                //case SIMD_V128_LOAD16_LANE:
+                //case SIMD_V128_LOAD32_LANE:
+                //case SIMD_V128_LOAD64_LANE:
                     if (instrumentLevel & ENABLE_WP_READ) {
                         return readWatchpointInstrCallback(instrBytes);
                     }
