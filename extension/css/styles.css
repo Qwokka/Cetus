@@ -29,11 +29,9 @@ html {
 .modal {
 	width: 100%;
 	height: 100%;
-	position: fixed;
 	left: 0;
 	top: 0;
 	z-index: 999;
-	overflow-y: scroll;
 	display: flex;
 	flex-flow: column nowrap;
 	justify-content: flex-end;
@@ -110,6 +108,7 @@ html {
 
 .modal-table td:nth-child(2) {
 	width: 100%;
+    overflow:scroll;
 }
 
 .modal-table .load-button,
