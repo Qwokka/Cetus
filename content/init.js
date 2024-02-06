@@ -1134,8 +1134,10 @@ const webAssemblyInstantiateHook = function(inObject, importObject = {}) {
         importObject.env = {};
     }
 
-    importObject.env.readWatchCallback = readWatchCallback;
-    importObject.env.writeWatchCallback = writeWatchCallback;
+    const cetusIdentifier = cetusInstances.reserveIdentifier();
+
+    importObject.env.readWatchCallback = function() { readWatchCallback(cetusIdentifier) };
+    importObject.env.writeWatchCallback = function() { writeWatchCallback(cetusIdentifier) };
 
     return new Promise(function(resolve, reject) {
         oldWebAssemblyInstantiate(instrumentedObject, importObject).then(function(instanceObject) {
@@ -1158,8 +1160,6 @@ const webAssemblyInstantiateHook = function(inObject, importObject = {}) {
             if (!(memoryInstance instanceof WebAssembly.Memory)) {
                 colorError("WebAssembly.instantiate() failed to retrieve a WebAssembly.Memory object");
             }
-
-            const cetusIdentifier = cetusInstances.reserveIdentifier();
 
             const watchpointExports = [];
 
@@ -1235,12 +1235,12 @@ const webAssemblyInstanceProxy = new Proxy(WebAssembly.Instance, {
             importObject.env = {};
         }
 
-        importObject.env.readWatchCallback = readWatchCallback;
-        importObject.env.writeWatchCallback = writeWatchCallback;
+        const cetusIdentifier = cetusInstances.reserveIdentifier();
+
+        importObject.env.readWatchCallback = function() { readWatchCallback(cetusIdentifier) };
+        importObject.env.writeWatchCallback = function() { writeWatchCallback(cetusIdentifier) };
 
         const result = new target(module, importObject);
-
-        const cetusIdentifier = cetusInstances.reserveIdentifier();
 
         const watchpointExports = [];
 
